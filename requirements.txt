@@ -1,0 +1,7 @@
+streamlit
+ultralytics
+opencv-python-headless
+sentence-transformers
+google-genai
+numpy
+Pillow

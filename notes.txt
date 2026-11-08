@@ -1,0 +1,11 @@
+Bullish FVG: teen candle ka pattern. Candle 1 ka high aur candle 3 ka low ke beech gap hota hai. Ye bullish imbalance zone hai.
+
+Bearish FVG: teen candle ka pattern. Candle 1 ka low aur candle 3 ka high ke beech gap hota hai. Ye bearish imbalance zone hai.
+
+My rule for bullish FVG: Bullish trend mein jab price discount zone mein ho aur London ya New York session chal raha ho tab buy dekhte hain. Agar FVG pehle se tap ho chuka hai toh use fresh nahi maante.
+
+My rule for bearish FVG: Bearish trend mein jab price premium zone mein ho tab sell dekhte hain.
+
+Risk rule: Maximum risk per trade 1% se 2% hona chahiye. Stop loss FVG ke low ya high ke thoda bahar rakho.
+
+Confirmation rule: Entry se pehle 5-minute chart par change of character (CHoCH) ya rejection wick zaroor dekho.
