@@ -1,11 +1,108 @@
-Bullish FVG: teen candle ka pattern. Candle 1 ka high aur candle 3 ka low ke beech gap hota hai. Ye bullish imbalance zone hai.
+=== ICT & SMART MONEY CONCEPTS (SMC) 104-TOPIC INSTITUTIONAL TRADING PLAYBOOK ===
 
-Bearish FVG: teen candle ka pattern. Candle 1 ka low aur candle 3 ka high ke beech gap hota hai. Ye bearish imbalance zone hai.
+[FOUNDATIONS: TOPICS 1-14]
+1. Market Structure: Swing Highs (HH/LH) aur Swing Lows (HL/LL) ka sequence. Bullish structure mein HLs defend hote hain; Bearish mein LHs defend hote hain.
+2. Swing Points (STH/ITH/LTH): Short-Term High (3-candle fractal), Intermediate-Term High (dono taraf lower STHs), Long-Term High (major liquidity pool).
+3. Break of Structure (BOS): Trend continuation. Candle body ka previous swing high (bullish) ya previous swing low (bearish) ke upar/neeche close hona.
+4. Market Structure Shift (MSS / CHoCH): Trend reversal signal. Agla swing point opposite direction mein break hota hai violent displacement candle ke sath. Wick nahi, body close zaroori hai.
+5. Premium vs Discount: Dealing range ka 50% midpoint. 50% ke upar Premium (sirf Sell dekho); 50% ke neeche Discount (sirf Buy dekho).
+6. Equilibrium: Dealing range ka exact 50.0% level. Fair price zone.
+7. Dealing Range: Current anchor swing low se swing high tak ki range jisme price trade kar rahi hai.
+8. Internal vs External Range Liquidity: External = Swing Highs/Lows (BSL/SSL). Internal = Range ke andar ke PD Arrays (FVGs, OBs). Price hamesha External se Internal aur Internal se External travel karti hai.
+9. Buy-Side Liquidity (BSL): Old highs, equal highs (EQH), ya trendline liquidity jahan buyers ke buy-stops aur short sellers ke stop losses baithe hain.
+10. Sell-Side Liquidity (SSL): Old lows, equal lows (EQL) jahan institutional stop hunts target hote hain.
+11. Equal Highs / Lows (EQH / EQL): Clean double tops ya double bottoms. Ye retail trap liquidity magnets hote hain. Smart money hamesha inko sweep karti hai.
+12. Old Highs / Lows: Previous Day High (PDH), Previous Day Low (PDL), Previous Week High/Low (PWH/PWL).
+13. Liquidity Sweep / Stop Hunt: Price wick banakar BSL ya SSL ke bahar jati hai, liquidity grab karti hai aur turant range ke andar wapas close hoti hai (False breakout / Turtle soup).
+14. Higher Timeframe (HTF) Bias: 4H aur Daily structure supreme hai. 15m/5m par hamesha HTF bias ki direction mein trade lo.
 
-My rule for bullish FVG: Bullish trend mein jab price discount zone mein ho aur London ya New York session chal raha ho tab buy dekhte hain. Agar FVG pehle se tap ho chuka hai toh use fresh nahi maante.
+[PD ARRAYS: TOPICS 15-34]
+15. Bullish Order Block (OB): Down candle before a strong up move jo market structure break (MSS/BOS) karti hai aur FVG chhodti hai. Demand zone.
+16. Bearish Order Block (OB): Up candle before a violent down move jo MSS/BOS karti hai. Supply zone.
+17. Fair Value Gap (FVG): 3-candle imbalance. Candle 1 aur Candle 3 ke beech khali space.
+18. BISI (Buyside Imbalance Sellside Inefficiency): Bullish FVG. Candle 1 High aur Candle 3 Low ke beech gap.
+19. SIBI (Sellside Imbalance Buyside Inefficiency): Bearish FVG. Candle 1 Low aur Candle 3 High ke beech gap.
+20. Inversion FVG (IFVG): Jab koi FVG price ko respect karne ki jagah aggressively break ho jata hai aur wapas aane par support/resistance flip ban jata hai.
+21. Breaker Block: Failed order block. Ek aisa OB jo liquidity sweep ke baad MSS deta hai aur opposite direction mein entry deta hai.
+22. Mitigation Block: Failure swing ke baad banne wala block jisme liquidity sweep nahi hui hoti lekin MSS hota hai.
+23. Rejection Block: Candle ki long wicks jo liquidity sweep karti hain; wick area entry zone hota hai.
+24. Propulsion Block: Active OB ke upar banne wala dusra OB jo trend ko accelerate karta hai.
+25. Vacuum Block: Weekend ya news events par aane wale large price gaps.
+26. Liquidity Void: Single directional extreme expansion jisme multiple candles bina wicks ke move karti hain. Price isko 100% fill karne wapas aati hai.
+27. Volume Imbalance: Do consecutive candles ke open aur close ke beech ka micro gap jahan koi trading volume nahi hui.
+28. Consequent Encroachment (CE): Kisi bhi FVG ya Liquidity Void ka exact 50.0% midpoint. Price CE ko touch karke reverse honi chahiye; CE ke paar body close weakness dikhata hai.
+29. Optimal Trade Entry (OTE): Fibonacci retracement levels 62.0%, 70.5%, aur 79.0%. 70.5% sweet spot entry hoti hai.
+30. Balanced Price Range (BPR): Do overlapping opposite FVGs (BISI aur SIBI) jo same price range mein bante hain aur perfect efficiency banate hain.
+31. Order Block Mean Threshold: Order Block candle ka exact 50.0% midpoint. Mean threshold ke upar/neeche body close invalidation maani jaati hai.
+32. Relative Equal Highs/Lows: Almost equal levels jo retail resistance/support dikhte hain, par actually liquidity pools hote hain.
+33. Opening Gap: New Day ya New Session ka first candle opening gap.
+34. Gap-Based PD Arrays: FVG, IFVG, BPR, NWOG, NDOG ka combined use.
 
-My rule for bearish FVG: Bearish trend mein jab price premium zone mein ho tab sell dekhte hain.
+[TIME & KILLZONES: TOPICS 35-58]
+35. Asian Killzone (20:00 - 00:00 NY / 05:30 - 09:30 IST): Initial range building phase. Asian High aur Low day ke liquidity targets banate hain.
+36. London Killzone (02:00 - 05:00 NY / 11:30 - 14:30 IST): Judas swing aur High/Low of the Day (HOD/LOD) banne ka primary time.
+37. NY AM Killzone (08:30 - 11:00 NY / 18:00 - 20:30 IST): High volatility window. US economic news release (8:30 AM NY) aur major trend expansion.
+38. NY Lunch (12:00 - 13:00 NY / 21:30 - 22:30 IST): Low volume consolidation aur stop hunts. No trade zone.
+39. NY PM Killzone (13:30 - 16:00 NY / 23:00 - 01:30 IST): Afternoon trend continuation ya late day reversal.
+40. London Close Killzone (10:00 - 12:00 NY / 19:30 - 21:30 IST): London traders profit booking karte hain; minor counter-trend pullbacks.
+41. Power of 3 (AMD): Accumulation (Asian Range) -> Manipulation (London Judas Sweep) -> Distribution (NY Trend Expansion).
+42. Judas Swing: True direction se opposite banne wala fake move jo session open par liquidity grab karne ke liye banta hai.
+43. Midnight Open (00:00 NY): Daily true open reference price. Bullish day par price midnight open ke neeche discount mein buy hoti hai.
+44. 8:30 AM NY Open: US news releases aur morning algorithm injection point.
+45. True Day Open: Session directional bias reference.
+46. New Week Opening Gap (NWOG): Friday close aur Sunday open ke beech ka gap; strong magnetic support/resistance.
+47. New Day Opening Gap (NDOG): Daily open gaps jo institutional targets hote hain.
+48. Opening Range Gap (ORG): Market session open standard ranges.
+49-51. Daily/Weekly/Monthly Profiles: Classic Tuesday Low/High of the week formation.
+52-54. IPDA Lookback (20, 40, 60 Days): Interbank Price Delivery Algorithm lookback windows liquidity pools dhundne ke liye.
+55-57. Daily/Weekly Bias & High/Low of Day: London open ya NY AM open par aksar din ka extreme ban jata hai.
+58. Friday Seek & Destroy: Weekend se pehle dono taraf ke stops sweep karna.
 
-Risk rule: Maximum risk per trade 1% se 2% hona chahiye. Stop loss FVG ke low ya high ke thoda bahar rakho.
+[ENTRY MODELS: TOPICS 59-74]
+59. Silver Bullet: Time window (10:00 - 11:00 AM NY). Rule: Previous liquidity sweep -> violent 5m displacement -> FVG entry -> Target 15-20 pips minimum / Draw on liquidity.
+60. ICT 2022 Mentorship Model: Setup: 1) HTF key level tap, 2) BSL ya SSL sweep, 3) Market Structure Shift (MSS) with displacement, 4) FVG formation, 5) Limit entry at FVG, 6) SL at swing extreme, 7) Target opposite liquidity.
+61. Unicorn Model: Breaker Block aur FVG ka perfect overlap. Extremely high win-rate setup.
+62. Turtle Soup: Key High/Low ke 5-20 pips bahar fakeout wick, rejection aur immediate reverse close.
+63. London Reversal: Asian high/low ko London session open par sweep karke opposite direction mein expansion.
+64. NY Reversal: London trend ka NY open (8:30/9:30 AM) par fake continuation aur sharp reversal.
+65. Asian Range Breakout & Retest: Asian high/low manipulation and re-entry into equilibrium.
+66. OTE Entry Model: Swing High se Swing Low ka 62%-79% Fib retracement + FVG confluence.
+67. FVG Entry Model: Pure imbalance fill entry at Consequent Encroachment (50%).
+68. Order Block Entry Model: First test of Bullish/Bearish OB mean threshold (50%).
+69. Breaker Entry Model: Failed OB retest as support/resistance flip.
+70. Liquidity Raid Entry: Double tops (EQH) sweep hone ke baad instant sell entry.
+71. Judas Swing Entry: Session open ke 15-30 minute baad fake move ke exhaust hone par reversal entry.
+72. Premium/Discount Entry: Discount mein buy, Premium mein sell with minimum 1:2 R:R.
+73. LTH MSS Confirmation: 1-minute ya 5-minute lower timeframe confirmation entry inside 15m PD Array.
+74. Order Flow Entry: Consecutive up-close candles during bullish trend acting as support.
 
-Confirmation rule: Entry se pehle 5-minute chart par change of character (CHoCH) ya rejection wick zaroor dekho.
+[ADVANCED CONCEPTS: TOPICS 75-92]
+75. SMT Divergence (Smart Money Tool): Non-confirming highs/lows between correlated assets (e.g. DXY making Higher High while Gold fails to make Lower Low = Hidden Bullish accumulation).
+76-77. Intermarket Analysis & DXY Correlation: Dollar inverse correlation with Gold (XAUUSD).
+78. MMBM (Market Maker Buy Model): Original consolidation -> Accumulation -> Re-accumulation -> Smart Money Reversal -> Low Risk Buy -> Distribution.
+79. MMSM (Market Maker Sell Model): Mirror image of MMBM.
+80. Standard Deviation Projections: Dealing range swing projections (-1 to -2.5 std dev) for exact take profit targets.
+81. Fibonacci Extensions: 1.272, 1.414, 1.618, 2.0 targets.
+82. Draw on Liquidity (DOL): Market ka primary magnetic target (Unmitigated FVG ya major BSL/SSL pool) jahan price delivery algorithm ja rahi hai.
+83. Quarterly Theory: Har saal, mahine aur din ko 90-minute / 4-phase cycles mein divide karna (A-M-D-X).
+84. 90-Minute Cycles: Har trading session 90 minute ke 4 quadrants mein divide hota hai.
+85. Fractals: 1-minute se lekar Monthly chart tak identical price delivery pattern.
+86. Market Efficiency Paradigm: Market ka sole purpose buyers aur sellers ko match karna aur imbalances fill karna hai.
+87. IPDA (Interbank Price Delivery Algorithm): Price random walk nahi hai, calculated mathematical liquidity injection hai.
+88. Accumulation / Re-accumulation: Institutional absorption of retail orders.
+89. Wyckoff vs ICT: Spring = Turtle Soup / Liquidity Sweep; Sign of Strength = Displacement + MSS; UTAD = Judas Swing.
+90-92. Macro & Reversals: Smart Money Reversal point identification.
+
+[RISK & EXECUTION DISCIPLINE: TOPICS 93-104]
+93. Risk Percentage: Maximum 1.0% to 2.0% risk per trade on account capital.
+94. Risk-Reward (RR): Minimum 1:2.0 R:R required. Never take 1:1 or negative setups.
+95. Position Sizing: Lot size = (Account Balance * Risk %) / (Stop Loss in Pips * Pip Value).
+96. Partial Take Profit: 50% lot close at 1:2 or first liquidity pool; move SL to Break-Even.
+97. Break-Even Rules: Price ne jab first internal range liquidity (opposite FVG) tap kar li, tabhi SL ko Entry par shift karo, pehle nahi.
+98. Stop Loss Placement: FVG ke low/high ke bahar ya Order Block ke 50% Mean Threshold ke peeche.
+99. Trade Management: Plan the trade, trade the plan. Do not touch trade during news volatility.
+100. Journaling: Screenshot before entry, screenshot after exit, checklist adherence score.
+101. Backtesting: Minimum 100 sample trades per setup before live deployment.
+102. Psychology: FOMO avoid karo. Daily max 2 trades.
+103. Daily Loss Limit: 2 consecutive losses (-2%) per day hit hote hi trading terminal band karo.
+104. High-Impact News: NFP, CPI, FOMC, PPI ke time new entries avoid karo; wait for post-news 15m displacement.
