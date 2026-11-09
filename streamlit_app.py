@@ -173,22 +173,29 @@ with tab_master:
         img = Image.open(uploaded_img)
         img_arr = np.array(img.convert("RGB"))[:, :, ::-1]
         
-        # 1. Computer Vision YOLO Inference
-        res = model(img_arr, conf=0.22, verbose=False)[0]
+        # 1. Computer Vision YOLO Inference (Strict Filter for Mobile Screenshots)
+        res = model(img_arr, conf=0.30, verbose=False)[0]
         h_px, w_px = res.orig_shape
         detected_boxes = []
-        for b in res.boxes:
+        valid_indices = []
+        for idx, b in enumerate(res.boxes):
             c_name = res.names[int(b.cls)]
+            top_pct = round(b.xyxy[0][1].item() / h_px * 100, 1)
+            bot_pct = round(b.xyxy[0][3].item() / h_px * 100, 1)
+            # Filter out false positives in phone status bar/header (<12%) or bottom navigation (>85%)
+            if top_pct < 12.0 or bot_pct > 86.0:
+                continue
+            valid_indices.append(idx)
             detected_boxes.append({
                 "type": c_name,
                 "conf": round(float(b.conf), 2),
                 "left_pct": round(b.xyxy[0][0].item() / w_px * 100, 1),
-                "top_pct": round(b.xyxy[0][1].item() / h_px * 100, 1),
+                "top_pct": top_pct,
                 "right_pct": round(b.xyxy[0][2].item() / w_px * 100, 1),
-                "bottom_pct": round(b.xyxy[0][3].item() / h_px * 100, 1)
+                "bottom_pct": bot_pct
             })
             
-        annotated_image = res.plot()[:, :, ::-1]
+        annotated_image = res.plot()[:, :, ::-1] if len(detected_boxes) > 0 else np.array(img.convert("RGB"))
 
         # 2. Background Historical Data & Market Alignment
         recent_window = df_all.iloc[-60:].copy()
@@ -303,16 +310,16 @@ with tab_master:
 
         with col_card:
             st.markdown(f"""
-            <div style="background: #1E293B; border-left: 6px solid {border_color}; padding: 16px; border-radius: 8px;">
-                <h3 style="margin: 0px; color: {border_color};">🎯 {verdict}</h3>
-                <h4 style="margin: 4px 0px 10px 0px; color: #E2E8F0;">{setup_name}</h4>
-                <div style="font-size: 0.95rem; line-height: 1.8;">
-                    • <b>Entry (50% CE / Key Level):</b> ${entry_p:.2f}<br>
-                    • <b>Invalidation Stop Loss:</b> ${sl_p:.2f}<br>
-                    • <b>Institutional TP1 (1:2 R:R):</b> ${tp_p:.2f}<br>
-                    • <b>Neural Confluence Score:</b> <span style="color: #38BDF8; font-weight: bold;">{confluence_score}%</span><br>
-                    • <b>Active Regime:</b> {range_zone}<br>
-                    • <b>Session Clock:</b> {last_candle["Session"]} {'🟢 (Killzone Active)' if is_kz else ''}
+            <div style="background: #1E293B; border-left: 6px solid {border_color}; padding: 18px; border-radius: 8px;">
+                <h3 style="margin: 0px; color: {border_color}; font-weight: 700;">🎯 {verdict}</h3>
+                <h4 style="margin: 4px 0px 12px 0px; color: #FFFFFF; font-weight: 600;">{setup_name}</h4>
+                <div style="font-size: 0.98rem; line-height: 2.1; color: #F8FAFC;">
+                    • <span style="color: #94A3B8;">Entry (50% CE / Key Level):</span> <b style="color: #38BDF8; font-size: 1.05rem;">${entry_p:.2f}</b><br>
+                    • <span style="color: #94A3B8;">Invalidation Stop Loss:</span> <b style="color: #F87171; font-size: 1.02rem;">${sl_p:.2f}</b><br>
+                    • <span style="color: #94A3B8;">Institutional TP1 (1:2 R:R):</span> <b style="color: #34D399; font-size: 1.02rem;">${tp_p:.2f}</b><br>
+                    • <span style="color: #94A3B8;">Neural Confluence Score:</span> <span style="color: #FBBF24; font-weight: bold; font-size: 1.05rem;">{confluence_score}%</span><br>
+                    • <span style="color: #94A3B8;">Active Regime:</span> <b style="color: #E2E8F0;">{range_zone}</b><br>
+                    • <span style="color: #94A3B8;">Session Clock:</span> <b style="color: #E2E8F0;">{last_candle["Session"]}</b> {'🟢 (Killzone Active)' if is_kz else ''}
                 </div>
             </div>
             """, unsafe_allow_html=True)
