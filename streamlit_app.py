@@ -1,5 +1,5 @@
 import streamlit as st
-import os, json, zoneinfo, io, requests
+import os, json, zoneinfo, io, requests, cv2
 import pandas as pd
 import numpy as np
 from datetime import time
@@ -182,6 +182,78 @@ def get_active_ict_topics(verdict, is_unicorn, is_kz, is_sb, session, sweep_dete
     topics.append({"id": 98, "name": "Stop Loss Placement", "status": "Invalidation behind 50% CE/MT or Swing Extreme"})
     return topics
 
+def annotate_chart_with_ict_markings(pil_img, detected_boxes, verdict, setup_name, score, sweep_name, sweep_pips):
+    img = np.array(pil_img.convert('RGB'))[:, :, ::-1].copy()
+    h, w = img.shape[:2]
+    overlay = img.copy()
+
+    # High-contrast institutional colors (BGR)
+    COLOR_BULL_FVG = (129, 185, 16)   # #10B981 Emerald Green
+    COLOR_BEAR_FVG = (68, 68, 239)    # #EF4444 Red
+    COLOR_BULL_OB  = (246, 130, 59)   # #3B82F6 Blue
+    COLOR_BEAR_OB  = (22, 115, 249)   # #F97316 Orange
+    COLOR_CE_LINE  = (212, 182, 6)    # #06B6D4 Cyan
+
+    for b in detected_boxes:
+        c_type = b.get('type', '')
+        conf = b.get('conf', 0.5)
+        x1 = max(0, int(b.get('left_pct', 0) / 100.0 * w))
+        y1 = max(0, int(b.get('top_pct', 0) / 100.0 * h))
+        x2 = min(w, int(b.get('right_pct', 0) / 100.0 * w))
+        y2 = min(h, int(b.get('bottom_pct', 0) / 100.0 * h))
+        if x2 <= x1 or y2 <= y1:
+            continue
+
+        if 'bull_fvg' in c_type:
+            col = COLOR_BULL_FVG
+            label = f'#17 Bull FVG (BISI) {int(conf*100)}%'
+            has_ce = True
+        elif 'bear_fvg' in c_type:
+            col = COLOR_BEAR_FVG
+            label = f'#17 Bear FVG (SIBI) {int(conf*100)}%'
+            has_ce = True
+        elif 'bull_ob' in c_type:
+            col = COLOR_BULL_OB
+            label = f'#15 Bullish OB (+OB) {int(conf*100)}%'
+            has_ce = False
+        else:
+            col = COLOR_BEAR_OB
+            label = f'#16 Bearish OB (-OB) {int(conf*100)}%'
+            has_ce = False
+
+        # Translucent shaded box
+        cv2.rectangle(overlay, (x1, y1), (x2, y2), col, -1)
+        # Solid border
+        cv2.rectangle(img, (x1, y1), (x2, y2), col, 2)
+
+        # 50% Consequent Encroachment (CE) dashed midpoint line
+        if has_ce:
+            mid_y = int((y1 + y2) / 2)
+            cv2.line(img, (x1, mid_y), (x2, mid_y), COLOR_CE_LINE, 1, cv2.LINE_AA)
+            cv2.putText(img, '#28 50% CE', (x1 + 6, mid_y - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.44, COLOR_CE_LINE, 1, cv2.LINE_AA)
+
+        # Tag label on box
+        lbl_w = len(label) * 9 + 8
+        cv2.rectangle(img, (x1, max(0, y1 - 22)), (x1 + lbl_w, y1), col, -1)
+        cv2.putText(img, label, (x1 + 4, y1 - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.44, (255, 255, 255), 1, cv2.LINE_AA)
+
+    # Blend overlay with original image
+    cv2.addWeighted(overlay, 0.28, img, 0.72, 0, img)
+
+    # Top Institutional Header Watermark Banner
+    banner_h = 34
+    cv2.rectangle(img, (0, 0), (w, banner_h), (15, 23, 42), -1)
+    status_text = f"ICT AI | {verdict} | {setup_name[:24]} | Score: {score}%"
+    cv2.putText(img, status_text, (10, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.50, (251, 191, 36), 1, cv2.LINE_AA)
+
+    # Bottom Liquidity Sweep Banner
+    if sweep_name != 'None':
+        sw_text = f"Topic #13: {sweep_name} (+{sweep_pips} pips)"
+        cv2.rectangle(img, (0, h - 28), (w, h), (15, 23, 42), -1)
+        cv2.putText(img, sw_text, (10, h - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.46, (56, 189, 248), 1, cv2.LINE_AA)
+
+    return Image.fromarray(img[:, :, ::-1])
+
 # Initialize Session States
 if "master_chat" not in st.session_state:
     st.session_state.master_chat = []
@@ -352,6 +424,11 @@ with tab_master:
             eq_price=eq_price
         )
 
+        # Generate full visual markings on chart
+        marked_chart_pil = annotate_chart_with_ict_markings(
+            img, detected_boxes, verdict, setup_name, confluence_score, sweep_detected, sweep_pips
+        )
+
         # Store analyzed state for interactive continuous chat
         st.session_state.last_analyzed_data = {
             "verdict": verdict,
@@ -375,15 +452,31 @@ with tab_master:
             "is_unicorn": is_unicorn,
             "detected_boxes": detected_boxes,
             "matched_topics": matched_topics,
+            "marked_chart_pil": marked_chart_pil,
             "image": img
         }
+
+        # Initialize chat with annotated chart if first upload
+        if len(st.session_state.master_chat) == 0:
+            top_pre = ", ".join([f"#{t['id']} {t['name']}" for t in matched_topics[:6]])
+            init_audit = f"""### 🎯 Institutional Audit: `{verdict}` ({setup_name})
+* **Entry (50% CE):** `${entry_p:.2f}` | **SL:** `${sl_p:.2f}` | **TP1 (1:2):** `${tp_p:.2f}`
+* **Neural Confluence Score:** **{confluence_score}%**
+* **Active 104-Topics ({len(matched_topics)} Found):** {top_pre}
+
+Aap is chart ke baare mein koi bhi sawal neeche chat mein pooch sakte hain!"""
+            st.session_state.master_chat.append({
+                "user": "📷 [Uploaded Chart Screenshot]",
+                "bot": init_audit,
+                "annotated_img": marked_chart_pil
+            })
 
         # --- SECTION: VISUAL RESULTS & EXECUTION CARD ---
         st.divider()
         col_img, col_card = st.columns([1.3, 1])
         
         with col_img:
-            st.image(annotated_image, caption="⚡ YOLOv8 Detected Zones (Green: Bull FVG | Red: Bear FVG | Blue: Bull OB | Orange: Bear OB)", use_container_width=True)
+            st.image(marked_chart_pil, caption="⚡ Annotated Chart with 104-Topic Institutional Markings", use_container_width=True)
 
         with col_card:
             st.markdown(f"""
@@ -445,7 +538,7 @@ with tab_master:
 📚 *Active ICT Topics ({len(matched_topics)} Marked):*
 {topic_lines}
 ━━━━━━━━━━━━━━━━━━━━"""
-                        ok, res_txt = send_telegram_alert(tok, cid, msg, pil_image=Image.fromarray(annotated_image))
+                        ok, res_txt = send_telegram_alert(tok, cid, msg, pil_image=marked_chart_pil)
                         if ok:
                             st.success("📲 Alert sent to your Telegram phone app!")
                         else:
@@ -509,12 +602,20 @@ USER QUESTION:
 Respond in authoritative, crisp Hinglish using professional ICT/SMC terms. Never hallucinate fake numbers. Explicitly cite the marked Topic numbers (e.g. Topic #10, Topic #17, Topic #28, Topic #60) in your explanation so the trader can see the syllabus rules applied to this exact chart.
 """
                 ai_response = call_gemini([img.convert("RGB"), prompt_text])
-                st.session_state.master_chat.append({"user": active_query, "bot": ai_response})
+                st.session_state.master_chat.append({
+                    "user": active_query,
+                    "bot": ai_response,
+                    "annotated_img": marked_chart_pil
+                })
 
         if st.session_state.master_chat:
             for msg in reversed(st.session_state.master_chat[-6:]):
                 st.markdown(f"**👤 You:** {msg['user']}")
-                st.markdown(f"**🏛️ Institutional Co-Pilot:**\n{msg['bot']}")
+                with st.chat_message("assistant"):
+                    st.markdown("**🏛️ Institutional Co-Pilot:**")
+                    if msg.get("annotated_img") is not None:
+                        st.image(msg["annotated_img"], caption="⚡ Marked Chart with 104-Topic Institutional Annotations", use_container_width=True)
+                    st.markdown(msg["bot"])
                 st.divider()
 
     else:
