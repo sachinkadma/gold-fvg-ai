@@ -1,5 +1,5 @@
 import streamlit as st
-import os, json, zoneinfo, io, requests, cv2, re
+import os, json, zoneinfo, io, requests, cv2, re, base64
 import pandas as pd
 import numpy as np
 from datetime import time
@@ -291,62 +291,107 @@ def retrieve_rules(q, k=4):
     return [chunks[i] for i in idx]
 
 # -----------------------------------------------------------------------------
-# FRONTIER GEN AI / AGI MODEL ENGINE
+# DYNAMIC FRONTIER GEMINI REST ENGINE (ZERO 404s, AUTO-DISCOVERS ACTIVE MODELS)
 # -----------------------------------------------------------------------------
-AGI_MODELS_POOL = [
-    "gemini-2.0-flash-thinking-exp-01-21",  # Google Frontier AGI Thinking Model
-    "gemini-2.0-flash-thinking-exp",        # AGI Thinking Alternate Endpoint
-    "gemini-2.0-flash",                     # High-Speed Multimodal Vision
-    "gemini-1.5-pro",                       # Deep Reasoning Pro Model
-    "gemini-1.5-flash"                      # Ultra-Reliable Fallback
-]
+def get_available_gemini_models(api_key):
+    try:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
+        r = requests.get(url, timeout=7)
+        if r.status_code == 200:
+            data = r.json()
+            models = []
+            for m in data.get("models", []):
+                if "generateContent" in m.get("supportedGenerationMethods", []):
+                    m_name = m.get("name", "").replace("models/", "")
+                    models.append(m_name)
+            return models, None
+        else:
+            err_data = r.json().get("error", {})
+            return [], err_data.get("message", r.text)
+    except Exception as e:
+        return [], str(e)
 
 def call_gemini(contents, preferred_model_type="AGI Deep Thinking"):
     key = st.session_state.get("gemini_key", "").strip() or st.secrets.get("GEMINI_API_KEY", "").strip() or os.environ.get("GEMINI_API_KEY", "").strip()
     if not key:
-        return None, "⚠️ GEMINI_API_KEY missing. Please enter your API key in the Sidebar Settings ⚙️."
+        return None, None, "⚠️ GEMINI_API_KEY missing. Please enter your API key in the Sidebar Settings ⚙️."
     
-    # Order candidate models based on user preference
-    if "AGI" in preferred_model_type:
-        candidates = ["gemini-2.0-flash-thinking-exp-01-21", "gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash"]
-    elif "Speed" in preferred_model_type:
-        candidates = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
+    # 1. Dynamically query Google API for supported models for this specific key
+    available_models, disc_err = get_available_gemini_models(key)
+    
+    if available_models:
+        def rank_model(m):
+            m_l = m.lower()
+            if "AGI" in preferred_model_type:
+                if "thinking" in m_l: return 0
+                if "2.5-flash" in m_l or "2.5" in m_l: return 1
+                if "2.0-flash" in m_l: return 2
+                if "1.5-pro" in m_l: return 3
+                if "1.5-flash" in m_l: return 4
+            elif "Speed" in preferred_model_type:
+                if "2.5-flash" in m_l or "2.0-flash" in m_l: return 0
+                if "1.5-flash" in m_l: return 1
+                if "thinking" in m_l: return 2
+            else:
+                if "1.5-pro" in m_l: return 0
+                if "2.0-flash" in m_l: return 1
+                if "thinking" in m_l: return 2
+            return 10
+        candidates = sorted(available_models, key=rank_model)
     else:
-        candidates = ["gemini-1.5-pro", "gemini-2.0-flash", "gemini-1.5-flash"]
+        # Fallback candidate list if model listing is restricted
+        candidates = [
+            "gemini-2.5-flash",
+            "gemini-2.0-flash-thinking-exp-01-21",
+            "gemini-2.0-flash-thinking-exp",
+            "gemini-2.0-flash",
+            "gemini-1.5-flash-latest",
+            "gemini-1.5-pro-latest",
+            "gemini-1.5-flash",
+            "gemini-1.5-pro"
+        ]
 
-    last_err = ""
-    # 1. Try official google-genai SDK
-    try:
-        from google import genai
-        client = genai.Client(api_key=key)
-        for m in candidates:
-            try:
-                res = client.models.generate_content(model=m, contents=contents)
-                if res and hasattr(res, "text") and res.text:
-                    return res.text, None
-            except Exception as e:
-                last_err = str(e)
-                continue
-    except Exception as e:
-        last_err = str(e)
+    # 2. Build REST JSON payload with text and base64 inline images
+    parts = []
+    for item in contents:
+        if isinstance(item, str):
+            parts.append({"text": item})
+        elif isinstance(item, Image.Image):
+            buf = io.BytesIO()
+            item.convert("RGB").save(buf, format="JPEG", quality=85)
+            b64_str = base64.b64encode(buf.getvalue()).decode("utf-8")
+            parts.append({
+                "inline_data": {
+                    "mime_type": "image/jpeg",
+                    "data": b64_str
+                }
+            })
 
-    # 2. Try legacy google.generativeai SDK as fallback
-    try:
-        import google.generativeai as legacy_genai
-        legacy_genai.configure(api_key=key)
-        for m in candidates:
-            try:
-                model_inst = legacy_genai.GenerativeModel(m)
-                res = model_inst.generate_content(contents)
-                if res and hasattr(res, "text") and res.text:
-                    return res.text, None
-            except Exception as e:
-                last_err = str(e)
-                continue
-    except Exception as e:
-        last_err = str(e)
+    payload = {"contents": [{"parts": parts}]}
+    headers = {"Content-Type": "application/json"}
 
-    return None, f"⚠️ Gemini API Error: {last_err}. Check your key in Sidebar Settings ⚙️."
+    last_err = disc_err or ""
+    # 3. Call candidates in priority order until successful
+    for mod in candidates:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{mod}:generateContent?key={key}"
+        try:
+            r = requests.post(url, headers=headers, json=payload, timeout=28)
+            if r.status_code == 200:
+                res_data = r.json()
+                cands = res_data.get("candidates", [])
+                if cands:
+                    p = cands[0].get("content", {}).get("parts", [])
+                    if p:
+                        st.session_state.active_gemini_model = mod
+                        return p[0].get("text", ""), mod, None
+            else:
+                err_info = r.json().get("error", {})
+                last_err = err_info.get("message", r.text)
+        except Exception as e:
+            last_err = str(e)
+            continue
+
+    return None, None, f"⚠️ Gemini API Error: {last_err}. Check your key in Sidebar Settings ⚙️."
 
 def parse_gemini_json(text):
     if not text: return None
@@ -509,6 +554,8 @@ if "gemini_key" not in st.session_state:
     st.session_state.gemini_key = st.secrets.get("GEMINI_API_KEY", "")
 if "agi_model_mode" not in st.session_state:
     st.session_state.agi_model_mode = "AGI Deep Thinking"
+if "active_gemini_model" not in st.session_state:
+    st.session_state.active_gemini_model = "Auto-Detect"
 if "tg_token" not in st.session_state:
     st.session_state.tg_token = st.secrets.get("TELEGRAM_BOT_TOKEN", "")
 if "tg_chat_id" not in st.session_state:
@@ -525,7 +572,7 @@ with st.sidebar:
     st.markdown("#### 🚀 Select Frontier Model")
     selected_mode = st.radio(
         "AI Reasoning Engine",
-        ["🧠 AGI Deep Thinking (Gemini 2.0 Thinking)", "⚡ Ultra-Fast Vision (Gemini 2.0 Flash)", "🔬 Institutional Quant (Gemini 1.5 Pro)"],
+        ["🧠 AGI Deep Thinking", "⚡ Ultra-Fast Vision", "🔬 Institutional Quant Pro"],
         index=0
     )
     st.session_state.agi_model_mode = selected_mode
@@ -540,12 +587,16 @@ with st.sidebar:
         if not st.session_state.gemini_key:
             st.error("Pehle API Key enter karein!")
         else:
-            with st.spinner("Testing frontier AGI connection..."):
-                test_res, test_err = call_gemini(["Respond with: 'AGI Institutional Model Online & Ready'"], preferred_model_type=st.session_state.agi_model_mode)
-                if test_res:
-                    st.success(f"✅ {test_res.strip()}")
+            with st.spinner("Connecting to Google AI & discovering authorized models..."):
+                mods, err = get_available_gemini_models(st.session_state.gemini_key)
+                if mods:
+                    test_txt, active_m, test_err = call_gemini(["Respond with: 'AGI Institutional Model Online & Ready'"], preferred_model_type=st.session_state.agi_model_mode)
+                    if test_txt:
+                        st.success(f"✅ Connected! Model: **{active_m}** ({len(mods)} models available)")
+                    else:
+                        st.warning(f"Models found: {len(mods)}, but ping returned: {test_err}")
                 else:
-                    st.error(test_err)
+                    st.error(f"API Error: {err}")
 
     st.divider()
     st.markdown("#### 🔔 Telegram Alert Credentials")
@@ -591,7 +642,7 @@ st.markdown(f"""
         <span style="color: #94A3B8 !important; font-size: 0.92rem; margin-left: 10px; font-weight: 500;">XAU/USD 15m Institutional Autonomous Co-Pilot</span>
     </div>
     <div class="chat-status">
-        ● {st.session_state.agi_model_mode.split('(')[0].strip()} Active
+        ● {st.session_state.agi_model_mode.split('(')[0].strip()} ({st.session_state.active_gemini_model})
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -787,7 +838,7 @@ Respond ONLY in STRICT VALID JSON matching this schema:
   "explanation_hinglish": "Bhai chart par AGI model ne clean institutional footprint detect kiya hai..."
 }}
 """
-                gemini_raw, gemini_err = call_gemini([input_img.convert("RGB"), agi_vision_prompt], preferred_model_type=st.session_state.agi_model_mode)
+                gemini_raw, used_model, gemini_err = call_gemini([input_img.convert("RGB"), agi_vision_prompt], preferred_model_type=st.session_state.agi_model_mode)
                 
                 if gemini_raw:
                     gemini_data = parse_gemini_json(gemini_raw)
@@ -870,7 +921,7 @@ INSTRUCTIONS:
 2. Answer directly with deep ICT concepts (Topic #4 MSS, #13 Sweeps, #17 FVG, #28 50% CE, #98 SL placement, IPDA dealing ranges).
 3. Keep it practical, structured, and zero hallucination.
 """
-                txt_reply, txt_err = call_gemini([followup_prompt], preferred_model_type=st.session_state.agi_model_mode)
+                txt_reply, used_m, txt_err = call_gemini([followup_prompt], preferred_model_type=st.session_state.agi_model_mode)
                 ai_reply = txt_reply if txt_reply else (txt_err or "Please provide your question or upload a chart.")
 
             # Save assistant message to session state
