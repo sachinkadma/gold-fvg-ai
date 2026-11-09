@@ -7,7 +7,10 @@ from PIL import Image
 from ultralytics import YOLO
 from sentence_transformers import SentenceTransformer
 from huggingface_hub import hf_hub_download
-import yfinance as yf
+try:
+    import yfinance as yf
+except Exception:
+    yf = None
 
 st.set_page_config(
     page_title="ICT 104-Topic Institutional Terminal",

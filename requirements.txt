@@ -5,3 +5,5 @@ sentence-transformers
 google-genai
 numpy
 Pillow
+yfinance
+pyarrow
