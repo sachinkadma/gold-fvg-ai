@@ -2,14 +2,14 @@ import streamlit as st
 import os, json, zoneinfo, io, requests, cv2, re, base64
 import pandas as pd
 import numpy as np
-from datetime import time
+from datetime import datetime, time
 from PIL import Image
 from ultralytics import YOLO
 from sentence_transformers import SentenceTransformer
 from huggingface_hub import hf_hub_download
 
 st.set_page_config(
-    page_title="Gold ICT AI - AGI Institutional Co-Pilot",
+    page_title="Gold ICT AGI - Institutional Co-Pilot",
     page_icon="🧠",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -36,6 +36,30 @@ TOPIC_NAMES = {
     59: "Silver Bullet Model", 60: "ICT 2022 Mentorship Model", 61: "Unicorn Model",
     93: "Risk Percentage", 94: "Risk-to-Reward Ratio", 98: "Stop Loss Placement"
 }
+
+# -----------------------------------------------------------------------------
+# LIVE NY TIME & INTERBANK SESSION DETECTOR
+# -----------------------------------------------------------------------------
+def get_live_ny_session():
+    now_ny = datetime.now(NY_TZ)
+    t = now_ny.time()
+    time_str = now_ny.strftime("%H:%M:%S EST")
+    if time(2, 0) <= t < time(5, 0):
+        return f"🟢 London Killzone ({time_str})", "#10B981"
+    elif time(8, 30) <= t < time(11, 0):
+        if time(10, 0) <= t < time(11, 0):
+            return f"⚡ NY AM Killzone + Silver Bullet Active! ({time_str})", "#F59E0B"
+        return f"🟢 NY AM Killzone - Peak Gold Volatility ({time_str})", "#10B981"
+    elif time(12, 0) <= t < time(13, 0):
+        return f"⚠️ NY Lunch - Low Volume Chop ({time_str})", "#EF4444"
+    elif time(13, 30) <= t < time(16, 0):
+        if time(14, 0) <= t < time(15, 0):
+            return f"⚡ NY PM Killzone + Silver Bullet Active! ({time_str})", "#F59E0B"
+        return f"🟢 NY PM Killzone ({time_str})", "#10B981"
+    elif time(20, 0) <= t or t < time(0, 0):
+        return f"🔵 Asian Range - Daily Accumulation ({time_str})", "#38BDF8"
+    else:
+        return f"⚪ Off-Hours - Low Liquidity ({time_str})", "#94A3B8"
 
 # -----------------------------------------------------------------------------
 # SLEEK HIGH-CONTRAST CHATGPT / CLAUDE DARK THEME STYLING
@@ -72,26 +96,27 @@ st.markdown("""
     }
     .chat-title { font-size: 1.4rem; font-weight: 800; color: #38BDF8 !important; margin: 0; }
     .chat-badge {
-        background: #0284C7;
+        background: linear-gradient(135deg, #0284C7, #2563EB);
         color: #FFFFFF !important;
         font-size: 0.75rem;
-        padding: 3px 8px;
+        padding: 4px 10px;
         border-radius: 6px;
-        font-weight: 700;
+        font-weight: 800;
         margin-left: 8px;
         vertical-align: middle;
+        letter-spacing: 0.5px;
     }
-    .chat-status { font-size: 0.88rem; color: #34D399 !important; font-weight: 700; }
+    .chat-status { font-size: 0.88rem; font-weight: 700; }
 
     /* Welcome Hero */
     .hero-container {
         text-align: center;
         padding: 40px 20px 20px 20px;
-        max-width: 780px;
+        max-width: 800px;
         margin: 0 auto;
     }
-    .hero-title { font-size: 2.2rem; font-weight: 800; color: #FFFFFF !important; margin-bottom: 12px; }
-    .hero-subtitle { font-size: 1.08rem; color: #E2E8F0 !important; margin-bottom: 25px; line-height: 1.7; }
+    .hero-title { font-size: 2.3rem; font-weight: 800; color: #FFFFFF !important; margin-bottom: 12px; }
+    .hero-subtitle { font-size: 1.1rem; color: #E2E8F0 !important; margin-bottom: 25px; line-height: 1.7; }
     
     /* Chat Message Bubbles */
     [data-testid="stChatMessage"] {
@@ -556,6 +581,10 @@ if "agi_model_mode" not in st.session_state:
     st.session_state.agi_model_mode = "AGI Deep Thinking"
 if "active_gemini_model" not in st.session_state:
     st.session_state.active_gemini_model = "Auto-Detect"
+if "account_balance" not in st.session_state:
+    st.session_state.account_balance = 10000.0
+if "risk_percent" not in st.session_state:
+    st.session_state.risk_percent = 1.0
 if "tg_token" not in st.session_state:
     st.session_state.tg_token = st.secrets.get("TELEGRAM_BOT_TOKEN", "")
 if "tg_chat_id" not in st.session_state:
@@ -567,12 +596,12 @@ if "processed_file_names" not in st.session_state:
 # SIDEBAR: SETTINGS & MODEL CONTROLS
 # -----------------------------------------------------------------------------
 with st.sidebar:
-    st.markdown("### 🧠 AGI Model Engine Settings")
+    st.markdown("### 🧠 AGI Institutional Control Hub")
     
-    st.markdown("#### 🚀 Select Frontier Model")
+    st.markdown("#### 🚀 Frontier AGI Model Engine")
     selected_mode = st.radio(
-        "AI Reasoning Engine",
-        ["🧠 AGI Deep Thinking", "⚡ Ultra-Fast Vision", "🔬 Institutional Quant Pro"],
+        "Reasoning Architecture",
+        ["🧠 AGI Multi-Agent Swarm (Deep CoT)", "⚡ Ultra-Fast Vision (Instant Scan)", "🔬 Institutional Quant Pro (Full 104 Audit)"],
         index=0
     )
     st.session_state.agi_model_mode = selected_mode
@@ -583,47 +612,54 @@ with st.sidebar:
         st.session_state.gemini_key = g_key_val.strip()
         st.success("API Key saved!")
 
-    if st.button("🧪 Test AGI Model Connection", use_container_width=True):
+    if st.button("🧪 Test AGI Connection & Models", use_container_width=True):
         if not st.session_state.gemini_key:
             st.error("Pehle API Key enter karein!")
         else:
-            with st.spinner("Connecting to Google AI & discovering authorized models..."):
+            with st.spinner("Discovering authorized Gemini models..."):
                 mods, err = get_available_gemini_models(st.session_state.gemini_key)
                 if mods:
-                    test_txt, active_m, test_err = call_gemini(["Respond with: 'AGI Institutional Model Online & Ready'"], preferred_model_type=st.session_state.agi_model_mode)
+                    test_txt, active_m, test_err = call_gemini(["Respond with: 'AGI Swarm Intelligence Online & Ready'"], preferred_model_type=st.session_state.agi_model_mode)
                     if test_txt:
-                        st.success(f"✅ Connected! Model: **{active_m}** ({len(mods)} models available)")
+                        st.success(f"✅ Connected! Active: **{active_m}** ({len(mods)} models available)")
                     else:
                         st.warning(f"Models found: {len(mods)}, but ping returned: {test_err}")
                 else:
                     st.error(f"API Error: {err}")
 
     st.divider()
-    st.markdown("#### 🔔 Telegram Alert Credentials")
+    st.markdown("#### 🛡️ Live Risk Management & Lot Size")
+    c_bal = st.number_input("Account Balance ($)", value=st.session_state.account_balance, step=1000.0)
+    c_risk = st.slider("Risk Per Trade (%)", 0.5, 3.0, st.session_state.risk_percent, 0.5)
+    st.session_state.account_balance = c_bal
+    st.session_state.risk_percent = c_risk
+    st.caption(f"Risk Capital: **${(c_bal * c_risk / 100):.2f}** per trade setup")
+
+    st.divider()
+    st.markdown("#### 🔔 Telegram Alert Integration")
     tg_tok = st.text_input("Bot Token", value=st.session_state.tg_token, type="password", placeholder="789... from @BotFather")
     tg_cid = st.text_input("Chat ID", value=st.session_state.tg_chat_id, placeholder="123... from @userinfobot")
     if tg_tok != st.session_state.tg_token or tg_cid != st.session_state.tg_chat_id:
         st.session_state.tg_token = tg_tok.strip()
         st.session_state.tg_chat_id = tg_cid.strip()
-        st.success("Telegram credentials saved!")
+        st.success("Credentials saved!")
 
-    if st.button("🧪 Send Test Telegram Alert", use_container_width=True):
+    if st.button("🧪 Send Test Alert to Phone", use_container_width=True):
         if not st.session_state.tg_token or not st.session_state.tg_chat_id:
             st.error("Fill Token & Chat ID!")
         else:
-            t_msg = f"🔔 *Gold ICT AGI Connected!*\nReady to dispatch institutional trade blueprints."
+            t_msg = f"🔔 *Gold ICT AGI Connected!*\nReal-time New York session alerts ready."
             ok, err = send_telegram_alert(st.session_state.tg_token, st.session_state.tg_chat_id, t_msg)
             if ok: st.success("Sent to phone!")
             else: st.error(err)
 
     st.divider()
-    st.markdown("#### 🛡️ Position Size Calculator")
-    c_bal = st.number_input("Account Balance ($)", value=10000.0, step=1000.0)
-    c_risk = st.slider("Risk %", 0.5, 3.0, 1.0, 0.5)
-    c_sl_pips = st.number_input("SL Distance (Pips)", value=50.0, step=5.0)
-    if c_sl_pips > 0:
-        c_lot = round((c_bal * (c_risk/100)) / (c_sl_pips * 10), 2)
-        st.info(f"Exact Lot Size: **{c_lot} Lots**")
+    st.markdown("#### 📚 Search 104 ICT Syllabus Topics")
+    search_q = st.text_input("Search Topics", placeholder="e.g. FVG, MSS, Killzone, Turtle Soup")
+    if search_q:
+        matched = [(tid, tname) for tid, tname in TOPIC_NAMES.items() if search_q.lower() in tname.lower()]
+        for tid, tname in matched[:6]:
+            st.markdown(f"• **#{tid}** {tname}")
 
     st.divider()
     if st.button("🗑️ Clear Chat History", use_container_width=True):
@@ -632,17 +668,19 @@ with st.sidebar:
         st.rerun()
 
 # -----------------------------------------------------------------------------
-# MAIN CHATGPT HEADER
+# MAIN CHATGPT HEADER WITH LIVE SESSION CLOCK
 # -----------------------------------------------------------------------------
+session_label, session_color = get_live_ny_session()
+
 st.markdown(f"""
 <div class="chat-header">
     <div>
         <span class="chat-title">🧠 Gold ICT AGI</span>
-        <span class="chat-badge">GEN AI / AGI MODE</span>
-        <span style="color: #94A3B8 !important; font-size: 0.92rem; margin-left: 10px; font-weight: 500;">XAU/USD 15m Institutional Autonomous Co-Pilot</span>
+        <span class="chat-badge">SWARM AGI ENGINE</span>
+        <span style="color: #94A3B8 !important; font-size: 0.92rem; margin-left: 10px; font-weight: 500;">XAU/USD 15m Autonomous Co-Pilot</span>
     </div>
-    <div class="chat-status">
-        ● {st.session_state.agi_model_mode.split('(')[0].strip()} ({st.session_state.active_gemini_model})
+    <div class="chat-status" style="color: {session_color} !important;">
+        ● {session_label}
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -653,10 +691,10 @@ st.markdown(f"""
 if len(st.session_state.messages) == 0:
     st.markdown("""
     <div class="hero-container">
-        <div class="hero-title">Frontier ICT AGI Trading Assistant</div>
+        <div class="hero-title">Autonomous ICT AGI Institutional Co-Pilot</div>
         <div class="hero-subtitle">
             Upload any 15m Gold (XAU/USD) chart screenshot.<br>
-            The AGI Engine executes deep multi-step institutional reasoning (Market Structure Shift, Liquidity Sweeps, 50% CE, Retail Traps), marks the candles in Cameron4x ICT style, and outputs an elite trade blueprint with zero hallucination.
+            The <b>3-Agent AGI Swarm</b> (Liquidity Detective + ICT Structure Auditor + Chief Risk Officer) executes deep multi-step institutional reasoning, marks the candles in Cameron4x ICT style, and computes an execution blueprint with exact lot sizing.
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -681,6 +719,9 @@ for msg in st.session_state.messages:
                 tc = msg["trade_card"]
                 border_col = "#10B981" if "BUY" in tc["verdict"] else ("#EF4444" if "SELL" in tc["verdict"] else "#F59E0B")
                 grade = tc.get("setup_grade", "A+ Institutional (High Probability)")
+                rec_lot = tc.get("recommended_lot", 0.20)
+                risk_amt = tc.get("risk_amount", 100.0)
+
                 st.markdown(f"""
                 <div class="trade-card" style="border-left: 6px solid {border_col} !important;">
                     <div class="trade-verdict" style="color: {border_col} !important;">
@@ -692,6 +733,7 @@ for msg in st.session_state.messages:
                         • <span class="trade-lbl">Entry (50% CE / Key Level):</span> <b class="trade-val-cyan">${tc['entry_p']:.2f}</b><br>
                         • <span class="trade-lbl">Invalidation Stop Loss:</span> <b class="trade-val-red">${tc['sl_p']:.2f}</b><br>
                         • <span class="trade-lbl">Institutional TP1 (1:2 R:R):</span> <b class="trade-val-green">${tc['tp_p']:.2f}</b> &nbsp;|&nbsp; <span class="trade-lbl">Runner TP2:</span> <b style="color: #38BDF8 !important;">${tc.get('tp2_runner', tc['tp_p'] + 10.0):.2f}</b><br>
+                        • <span class="trade-lbl">Recommended Lot Size:</span> <b style="color: #FBBF24 !important; font-size: 1.05rem;">{rec_lot} Lots</b> <span style="color: #94A3B8;">(Risking ${risk_amt:.2f} / {st.session_state.risk_percent}%)</span><br>
                         • <span class="trade-lbl">Neural Confluence:</span> <b class="trade-val-yellow">{tc['confluence_score']}%</b> &nbsp;|&nbsp; <span class="trade-lbl">Dealing Range:</span> <b style="color: #FFFFFF !important;">{tc['range_zone']}</b><br>
                         • <span class="trade-lbl">🪤 Trapped Liquidity:</span> <b style="color: #F87171 !important;">{tc.get('trapped_liquidity', 'Retail breakout participants trapped')}</b><br>
                         • <span class="trade-lbl">🛑 Invalidation Rule:</span> <b style="color: #FBBF24 !important;">{tc.get('invalidation_thesis', 'Candle close beyond SL level')}</b>
@@ -704,37 +746,40 @@ for msg in st.session_state.messages:
                     t_html = "".join([f"<span class='topic-pill'><b>#{t['id']}</b> {t['name']}</span>" for t in msg["matched_topics"]])
                     st.markdown(f"<div style='margin-bottom: 14px; color: #FFFFFF !important;'><b style='color: #F8FAFC !important;'>📚 104-Topics Applied:</b><br>{t_html}</div>", unsafe_allow_html=True)
 
-            # 3. AGI Deep Reasoning / Chain-of-Thought Expander (if available)
-            if "chain_of_thought" in msg and msg["chain_of_thought"]:
-                with st.expander("🧠 AGI Institutional Chain-of-Thought (Deep Reasoning Process)"):
-                    for step in msg["chain_of_thought"]:
-                        st.markdown(f"• {step}")
+            # 4. Multi-Agent Swarm Debate Expander
+            if "agent_swarm" in msg and msg["agent_swarm"]:
+                aswarm = msg["agent_swarm"]
+                with st.expander("🤖 AGI Multi-Agent Swarm Debate & Consensus"):
+                    st.markdown(f"**🕵️ Agent 1 (Liquidity Detective):** {aswarm.get('liquidity_detective', 'Analyzed sweep dynamics.')}")
+                    st.markdown(f"**📐 Agent 2 (ICT Structure Auditor):** {aswarm.get('structure_auditor', 'Verified MSS and displacement energy.')}")
+                    st.markdown(f"**⚖️ Agent 3 (Chief Risk Officer):** {aswarm.get('risk_officer', 'Validated 1:2 R:R and risk sizing.')}")
 
-            # 4. AI Explanation & Reasoning
+            # 5. AI Explanation & Reasoning
             st.markdown(msg["content"])
 
-            # 5. One-Click Telegram Alert Dispatch
+            # 6. One-Click Telegram Alert Dispatch
             if "trade_card" in msg and msg["trade_card"] is not None:
-                if st.button("📲 Send Marked Chart to Telegram", key=f"tg_btn_{msg.get('msg_id', 0)}"):
+                if st.button("📲 Send AGI Blueprint to Telegram", key=f"tg_btn_{msg.get('msg_id', 0)}"):
                     tok = st.session_state.get("tg_token", "")
                     cid = st.session_state.get("tg_chat_id", "")
                     if not tok or not cid:
                         st.warning("⚠️ Pehle Sidebar mein Telegram Bot Token aur Chat ID enter karein!")
                     else:
                         tc = msg["trade_card"]
-                        tg_text = f"""🔔 *ICT GOLD (XAU/USD) 15m AGI ALERT* 🔔
+                        tg_text = f"""🔔 *GOLD (XAU/USD) 15m AGI BLUEPRINT* 🔔
 ━━━━━━━━━━━━━━━━━━━━
 🎯 *Signal:* {tc['verdict']} ({tc.get('setup_grade', 'A+')})
-📋 *Setup:* {tc['setup_name']}
+📋 *Model:* {tc['setup_name']}
 📍 *Entry (50% CE):* ${tc['entry_p']:.2f}
 🛑 *Stop Loss:* ${tc['sl_p']:.2f}
 🎯 *TP1 (1:2 R:R):* ${tc['tp_p']:.2f}
 🎯 *TP2 (Runner):* ${tc.get('tp2_runner', tc['tp_p']):.2f}
+📊 *Recommended Lot:* {tc.get('recommended_lot', 0.2)} Lots
 🧠 *Confluence:* {tc['confluence_score']}%
 🪤 *Trap:* {tc.get('trapped_liquidity', 'Retail trapped')}
 ━━━━━━━━━━━━━━━━━━━━"""
                         ok, err_desc = send_telegram_alert(tok, cid, tg_text, pil_image=msg.get("marked_img"))
-                        if ok: st.success("📲 Marked chart photo & trade plan sent to your Telegram phone!")
+                        if ok: st.success("📲 Marked chart photo & AGI blueprint sent to your Telegram phone!")
                         else: st.error(err_desc)
 
 # -----------------------------------------------------------------------------
@@ -760,7 +805,7 @@ if is_new_chart_upload or has_text_prompt:
     if is_new_chart_upload:
         st.session_state.processed_file_names.add(uploaded_chart.name)
         input_img = Image.open(uploaded_chart)
-        user_text = prompt_input if has_text_prompt else "Execute AGI-grade institutional analysis on this Gold 15m chart. Detect MSS, Liquidity Sweeps, FVGs, mark the candles cleanly in Cameron4x ICT style, and provide the complete trade blueprint."
+        user_text = prompt_input if has_text_prompt else "Execute AGI Multi-Agent Swarm analysis on this Gold 15m chart. Detect MSS, Liquidity Sweeps, FVGs, mark the candles cleanly in Cameron4x ICT style, and provide the complete institutional execution blueprint."
     else:
         input_img = None
         user_text = prompt_input
@@ -776,11 +821,11 @@ if is_new_chart_upload or has_text_prompt:
 
     # Process AI Analysis
     with st.chat_message("assistant"):
-        with st.spinner("🧠 AGI Model executing deep institutional reasoning across 104-topics..."):
+        with st.spinner("🧠 3-Agent AGI Swarm executing institutional consensus across 104-topics..."):
             marked_chart_pil = None
             trade_card_data = None
             matched_topics = []
-            chain_of_thought_steps = []
+            agent_swarm_data = {}
             ai_reply = ""
 
             if input_img is not None:
@@ -800,19 +845,16 @@ if is_new_chart_upload or has_text_prompt:
                 inval_thesis = "Candle body close above 4124.00 completely invalidates institutional order flow"
                 topic_ids = [1, 2, 4, 5, 6, 8, 9, 13, 17, 19, 28, 60, 93, 94, 98]
 
-                # Frontier Gen AI / AGI Deep Thinking Prompt
+                # Frontier Gen AI / AGI Deep Thinking Prompt with 3-Agent Swarm
                 agi_vision_prompt = f"""
-You are an Elite AGI Institutional Quantitative Hedge Fund Trader & ICT Master (Michael Huddleston style).
-Perform an autonomous, multi-step Chain-of-Thought (CoT) analysis on this 15m Gold (XAU/USD) candlestick chart screenshot.
+You are an Elite AGI Multi-Agent Quantitative Hedge Fund System for Gold (XAU/USD) 15m trading.
+Execute a 3-Agent Autonomous Swarm Debate on this 15m candlestick chart screenshot:
 
-REASONING FRAMEWORK:
-1. Liquidity Engineering: Did price raid Buy-Side Liquidity (BSL) or Sell-Side Liquidity (SSL)? Who is trapped?
-2. Displacement Energy: Did energetic candle bodies close through the structural pivot (MSS) confirming institutional order flow?
-3. PD Array Imbalance: Identify the Fair Value Gap (BISI/SIBI) and calculate the exact 50% Consequent Encroachment (50% CE) for limit entry.
-4. Dealing Range: Is price delivering from Premium to Discount (or vice versa)?
-5. Risk & Expectancy: Set Stop Loss behind the structural invalidation point. Target TP1 at minimum 1:2.0 R:R and TP2 runner at major external liquidity pool.
+AGENT 1 (Liquidity Detective): Scans BSL/SSL sweeps, old highs/lows purges, and retail trap psychology.
+AGENT 2 (ICT Structure Auditor): Verifies displacement candle momentum, Market Structure Shift (MSS), 3-candle FVG, and 50% Consequent Encroachment (50% CE).
+AGENT 3 (Chief Risk Officer): Enforces minimum 1:2.0 Risk-to-Reward ratio, invalidation thesis, and expectancy.
 
-Respond ONLY in STRICT VALID JSON matching this schema:
+Return ONLY a valid JSON object matching this schema:
 {{
   "chart_price": 4107.27,
   "verdict": "SELL_LIMIT",
@@ -828,13 +870,11 @@ Respond ONLY in STRICT VALID JSON matching this schema:
   "trapped_liquidity": "Retail breakout buyers trapped above 4120.00 swing high",
   "invalidation_thesis": "Candle body close above 4124.00 invalidates the institutional order flow",
   "matched_topic_ids": [1, 2, 4, 5, 6, 8, 9, 13, 17, 19, 28, 60, 93, 94, 98],
-  "chain_of_thought": [
-    "Phase 1 (Liquidity Grab): Smart Money engineered liquidity above 4120.00 old highs, sweeping BSL to fill institutional sell orders.",
-    "Phase 2 (MSS & Displacement): An energetic 15m red displacement candle closed below the structural swing low, confirming a Market Structure Shift (#4 MSS).",
-    "Phase 3 (Imbalance & 50% CE): Displacement created an institutional SIBI Fair Value Gap (#17 FVG). The 50% Consequent Encroachment (#28 50% CE) is calculated at 4113.00.",
-    "Phase 4 (Risk/Reward): Risk is 11 pips to capture 22 pips on TP1 (1:2.0 R:R) and 38 pips on TP2 runner.",
-    "Phase 5 (Trade Management): Place Limit order at 4113.00. Once TP1 is achieved, trail SL to break-even."
-  ],
+  "agent_swarm": {{
+    "liquidity_detective": "Price purged old swing highs at 4120.00, taking out retail buy stops before reversing.",
+    "structure_auditor": "Displacement red candle broke through the structural swing low, confirming a Market Structure Shift (#4 MSS) and creating an active FVG.",
+    "risk_officer": "Entry at 50% CE (4113.00) with SL at 4124.00 offers 1:2.0 R:R to TP1 (4091.00) and 1:3.4 to TP2 (4075.00)."
+  }},
   "explanation_hinglish": "Bhai chart par AGI model ne clean institutional footprint detect kiya hai..."
 }}
 """
@@ -857,19 +897,17 @@ Respond ONLY in STRICT VALID JSON matching this schema:
                         trapped_liq = str(gemini_data.get("trapped_liquidity", trapped_liq))
                         inval_thesis = str(gemini_data.get("invalidation_thesis", inval_thesis))
                         topic_ids = gemini_data.get("matched_topic_ids", topic_ids)
-                        chain_of_thought_steps = gemini_data.get("chain_of_thought", [])
+                        agent_swarm_data = gemini_data.get("agent_swarm", {})
                         ai_reply = gemini_data.get("explanation_hinglish", gemini_raw)
                     else:
                         ai_reply = gemini_raw
                 else:
                     # Provide fallback institutional explanation if Gemini API was unavailable
-                    chain_of_thought_steps = [
-                        "Phase 1 (Liquidity Grab): Smart Money engineered liquidity by sweeping key swing highs/lows.",
-                        "Phase 2 (MSS & Displacement): Strong institutional momentum candle broke through structural pivot.",
-                        "Phase 3 (Imbalance & 50% CE): Fair Value Gap created with entry guarded at 50% Consequent Encroachment.",
-                        "Phase 4 (Risk/Reward): Minimum 1:2.0 Risk-to-Reward ratio calculated for institutional precision.",
-                        "Phase 5 (Trade Management): Protect capital with Stop Loss behind the swing extreme."
-                    ]
+                    agent_swarm_data = {
+                        "liquidity_detective": f"Smart money engineered liquidity by sweeping key swing highs/lows ({sweep_txt}).",
+                        "structure_auditor": "Displacement momentum candle broke structural pivot confirming Market Structure Shift (#4 MSS).",
+                        "risk_officer": "Strict 1:2.0 Risk-to-Reward ratio calculated with invalidation behind swing extreme."
+                    }
                     ai_reply = f"""### 🧠 Frontier AGI Institutional Trade Blueprint:
 - **AGI Model Grade:** ⭐ **{setup_grade}**
 - **Market Structure Shift (#4 MSS):** Structural shift confirmed with energetic displacement.
@@ -879,6 +917,12 @@ Respond ONLY in STRICT VALID JSON matching this schema:
 - **Trapped Retail Pool:** {trapped_liq}.
 
 *(Note: {gemini_err if gemini_err else 'Sidebar mein Gemini Key daal kar interactive deep thinking reasoning stream activate kar sakte hain.'})*"""
+
+                # Dynamic lot sizing calculation
+                sl_dist = abs(entry_p - sl_p)
+                sl_pips = max(5.0, sl_dist * 10.0)
+                risk_cash = st.session_state.account_balance * (st.session_state.risk_percent / 100.0)
+                rec_lot = round(risk_cash / (sl_pips * 10.0), 2)
 
                 # ALWAYS generate the Cameron4x style annotated candlestick chart
                 marked_chart_pil = generate_cameron4x_annotated_chart(
@@ -900,7 +944,9 @@ Respond ONLY in STRICT VALID JSON matching this schema:
                     "confluence_score": score,
                     "range_zone": range_z,
                     "trapped_liquidity": trapped_liq,
-                    "invalidation_thesis": inval_thesis
+                    "invalidation_thesis": inval_thesis,
+                    "recommended_lot": rec_lot,
+                    "risk_amount": risk_cash
                 }
 
             else:
@@ -931,7 +977,7 @@ INSTRUCTIONS:
                 "marked_img": marked_chart_pil,
                 "trade_card": trade_card_data,
                 "matched_topics": matched_topics,
-                "chain_of_thought": chain_of_thought_steps,
+                "agent_swarm": agent_swarm_data,
                 "msg_id": len(st.session_state.messages)
             }
             st.session_state.messages.append(assistant_entry)
