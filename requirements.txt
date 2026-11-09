@@ -3,6 +3,7 @@ ultralytics
 opencv-python-headless
 sentence-transformers
 google-genai
+google-generativeai
 numpy
 Pillow
 yfinance
