@@ -260,7 +260,7 @@ with tab_scan:
         return model, embedder, chunks, chunk_vecs, model_path
 
     model, embedder, chunks, chunk_vecs, active_model_path = load_models()
-    st.caption(f"🧠 **Active Vision Model:** `{active_model_path}` (Multi-Class 4-Array Engine)")
+    st.caption(f"🧠 **Active Vision Model:** `{active_model_path}` (Fine-Tuned Pro: Fresh & Unmitigated 4-Class Engine)")
 
     def retrieve(q, k=4):
         if embedder is None or len(chunks) == 0:
