@@ -1,5 +1,5 @@
 import streamlit as st
-import os, json, zoneinfo
+import os, json, zoneinfo, io, requests
 import pandas as pd
 import numpy as np
 from datetime import time
@@ -100,6 +100,29 @@ def call_gemini(contents):
             continue
     return "⚠️ AI generation error. Check API key."
 
+def send_telegram_alert(token, chat_id, text, pil_image=None):
+    if not token or not chat_id:
+        return False, "Bot Token ya Chat ID missing hai. Settings mein fill karein."
+    try:
+        if pil_image is not None:
+            buf = io.BytesIO()
+            pil_image.save(buf, format='JPEG', quality=88)
+            buf.seek(0)
+            url = f"https://api.telegram.org/bot{token}/sendPhoto"
+            files = {'photo': ('chart.jpg', buf, 'image/jpeg')}
+            data = {'chat_id': chat_id, 'caption': text, 'parse_mode': 'Markdown'}
+            r = requests.post(url, files=files, data=data, timeout=12)
+            res = r.json()
+            return res.get("ok", False), res.get("description", r.text)
+        else:
+            url = f"https://api.telegram.org/bot{token}/sendMessage"
+            data = {'chat_id': chat_id, 'text': text, 'parse_mode': 'Markdown'}
+            r = requests.post(url, data=data, timeout=10)
+            res = r.json()
+            return res.get("ok", False), res.get("description", r.text)
+    except Exception as e:
+        return False, str(e)
+
 # Initialize Session States
 if "master_chat" not in st.session_state:
     st.session_state.master_chat = []
@@ -107,12 +130,17 @@ if "last_analyzed_data" not in st.session_state:
     st.session_state.last_analyzed_data = None
 if "paper_trades" not in st.session_state:
     st.session_state.paper_trades = []
+if "tg_token" not in st.session_state:
+    st.session_state.tg_token = st.secrets.get("TELEGRAM_BOT_TOKEN", "")
+if "tg_chat_id" not in st.session_state:
+    st.session_state.tg_chat_id = st.secrets.get("TELEGRAM_CHAT_ID", "")
 
 # -----------------------------------------------------------------------------
-# 3 UNIFIED MAIN TABS (MOBILE OPTIMIZED)
+# UNIFIED MAIN TABS (MOBILE OPTIMIZED)
 # -----------------------------------------------------------------------------
-tab_master, tab_chart, tab_playbook = st.tabs([
+tab_master, tab_alerts, tab_chart, tab_playbook = st.tabs([
     "💬 Master AI Terminal (Upload & Chat)",
+    "🔔 15m Telegram Alerts",
     "📈 Interactive Chart",
     "📚 104-Topic Playbook & Risk Engine"
 ])
@@ -294,20 +322,46 @@ with tab_master:
             if sweep_detected != "None":
                 st.info(f"🏹 **Liquidity Sweep Confirmed:** {sweep_detected} (+{sweep_pips} pips)")
 
-            # Virtual paper trade logger button
+            # Dual action buttons: Paper trading & Telegram Alert
             st.write("")
-            if st.button("🚀 Log This Virtual Paper Order", type="primary", use_container_width=True):
-                st.session_state.paper_trades.append({
-                    "Time": last_ts.strftime('%m-%d %H:%M'),
-                    "Action": verdict,
-                    "Setup": setup_name,
-                    "Entry": f"${entry_p:.2f}",
-                    "SL": f"${sl_p:.2f}",
-                    "TP": f"${tp_p:.2f}",
-                    "Score": f"{confluence_score}%",
-                    "Status": "OPEN"
-                })
-                st.success("✅ Order Logged to Paper Trading Journal!")
+            b1, b2 = st.columns(2)
+            with b1:
+                if st.button("🚀 Log Paper Order", type="primary", use_container_width=True):
+                    st.session_state.paper_trades.append({
+                        "Time": last_ts.strftime('%m-%d %H:%M'),
+                        "Action": verdict,
+                        "Setup": setup_name,
+                        "Entry": f"${entry_p:.2f}",
+                        "SL": f"${sl_p:.2f}",
+                        "TP": f"${tp_p:.2f}",
+                        "Score": f"{confluence_score}%",
+                        "Status": "OPEN"
+                    })
+                    st.success("✅ Logged to Journal!")
+            with b2:
+                if st.button("📲 Send to Telegram", use_container_width=True):
+                    tok = st.session_state.get("tg_token", "")
+                    cid = st.session_state.get("tg_chat_id", "")
+                    if not tok or not cid:
+                        st.warning("⚠️ Pehle '🔔 15m Telegram Alerts' tab mein apna Bot Token & Chat ID dalein!")
+                    else:
+                        msg = f"""🔔 *ICT GOLD (XAU/USD) 15m ALERT* 🔔
+━━━━━━━━━━━━━━━━━━━━
+🎯 *Signal:* {verdict} ({setup_name})
+🏛️ *Session:* {last_candle['Session']} {'🟢 KZ' if is_kz else ''}
+━━━━━━━━━━━━━━━━━━━━
+📍 *Entry (50% CE):* ${entry_p:.2f}
+🛑 *Stop Loss (SL):* ${sl_p:.2f}
+🎯 *Take Profit (TP):* ${tp_p:.2f} (1:2.0 R:R)
+━━━━━━━━━━━━━━━━━━━━
+🧠 *Neural Confluence:* {confluence_score}%
+🏹 *Liquidity Sweep:* {sweep_detected}
+━━━━━━━━━━━━━━━━━━━━"""
+                        ok, res_txt = send_telegram_alert(tok, cid, msg, pil_image=Image.fromarray(annotated_image))
+                        if ok:
+                            st.success("📲 Alert sent to your Telegram phone app!")
+                        else:
+                            st.error(f"Telegram error: {res_txt}")
 
         # --- SECTION: CONTINUOUS INTERACTIVE CHAT ---
         st.divider()
@@ -364,6 +418,77 @@ Respond in authoritative, crisp Hinglish using professional ICT/SMC terms. Never
 
     else:
         st.info("👆 **Upar chart ka screenshot upload kijiye** (TradingView ya MT5). Upload karte hi model automatically patterns pehchane ga, background data check karega, aur execute plan dekar chat shuru karega!")
+
+# ==============================================================================
+# TAB 2: 15m TELEGRAM ALERTS ENGINE
+# ==============================================================================
+with tab_alerts:
+    st.subheader("🔔 15m Gold (XAU/USD) Real-Time Telegram Alerts")
+    st.caption("Receive instant institutional trade alerts with Entry, Stop Loss, and TP directly on your Telegram phone app.")
+
+    col_tg_cfg, col_tg_action = st.columns([1.2, 1])
+    with col_tg_cfg:
+        st.markdown("### ⚙️ Telegram Bot Settings")
+        input_token = st.text_input("Telegram Bot Token", value=st.session_state.tg_token, type="password", placeholder="7891234567:AAH...", help="Get from @BotFather")
+        input_chat_id = st.text_input("Telegram Chat ID", value=st.session_state.tg_chat_id, placeholder="123456789", help="Get from @userinfobot")
+        
+        if input_token != st.session_state.tg_token or input_chat_id != st.session_state.tg_chat_id:
+            st.session_state.tg_token = input_token
+            st.session_state.tg_chat_id = input_chat_id
+
+        st.markdown("""
+        **⚡ 2-Minute Setup Guide (Mobile):**
+        1. Telegram app mein **`@BotFather`** search karein aur `/newbot` likhein.
+        2. Name aur username set karein $\\rightarrow$ BotFather aapko **HTTP API Token** dega.
+        3. Telegram mein **`@userinfobot`** ko `/start` karein $\\rightarrow$ aapko numeric **Id** mil jayegi.
+        4. Apne naye bot ko search karke ek baar **`/start`** daba dein taaki wo aapko message bhej sake!
+        """)
+
+    with col_tg_action:
+        st.markdown("### 🧪 Test Connection & Live Scan")
+        if st.button("🧪 Send Test Alert to Telegram Phone App", type="primary", use_container_width=True):
+            if not st.session_state.tg_token or not st.session_state.tg_chat_id:
+                st.error("⚠️ Pehle Bot Token aur Chat ID fill karein!")
+            else:
+                test_msg = f"""🔔 *ICT GOLD (XAU/USD) 15m ALERT ENGINE CONNECTED!* 🔔
+━━━━━━━━━━━━━━━━━━━━
+✅ *Status:* 100% Active & Operational
+🏛️ *Asset:* XAU/USD (Gold 15m)
+⏱️ *Current NY Time:* {df_all.index[-1].strftime('%H:%M %Z')}
+🎯 *Active Session:* {df_all.iloc[-1]['Session']}
+━━━━━━━━━━━━━━━━━━━━
+Aapka phone real-time A++ institutional trade alerts receive karne ke liye ready hai!"""
+                ok, res_desc = send_telegram_alert(st.session_state.tg_token, st.session_state.tg_chat_id, test_msg)
+                if ok:
+                    st.success("🎉 **Success!** Aapke phone par Telegram test message chala gaya hai!")
+                else:
+                    st.error(f"❌ Telegram Error: {res_desc}")
+
+        st.divider()
+        st.markdown("### 🔍 Live 15m Gold Candle Scanner")
+        st.write("Scan the latest 15m candle from the historical/live feed and dispatch an alert if an active setup is found:")
+        if st.button("🚀 Scan Latest 15m Candle & Dispatch Alert", use_container_width=True):
+            if not st.session_state.tg_token or not st.session_state.tg_chat_id:
+                st.error("⚠️ Pehle Bot Token aur Chat ID fill karein!")
+            else:
+                last_c = df_all.iloc[-1]
+                last_p = round(float(last_c["Close"]), 2)
+                c_session = last_c["Session"]
+                is_kz_live = last_c["Is_Killzone"]
+                
+                alert_msg = f"""🔔 *ICT GOLD (XAU/USD) 15m MARKET UPDATE* 🔔
+━━━━━━━━━━━━━━━━━━━━
+📍 *Latest Price:* ${last_p:.2f}
+🏛️ *Session:* {c_session} {'🟢 (Active KZ)' if is_kz_live else '⚪ (Off-Hours)'}
+⏱️ *Time:* {df_all.index[-1].strftime('%Y-%m-%d %H:%M %Z')}
+━━━━━━━━━━━━━━━━━━━━
+🧠 *Engine State:* Monitoring 15m displacements and liquidity sweeps.
+🎯 *Rule:* No Sweep = No Entry."""
+                ok, res_desc = send_telegram_alert(st.session_state.tg_token, st.session_state.tg_chat_id, alert_msg)
+                if ok:
+                    st.success("📲 15m Market Update dispatched to Telegram!")
+                else:
+                    st.error(f"❌ Error: {res_desc}")
 
 # ==============================================================================
 # TAB 2: INTERACTIVE TRADINGVIEW CANDLESTICK CHART
