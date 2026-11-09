@@ -251,17 +251,16 @@ with tab_scan:
 
     @st.cache_resource
     def load_models():
-        model_path = "best.pt"
-        if not os.path.exists(model_path):
-            return None, None, [], None
+        model_path = "best_v2_4class.pt" if os.path.exists("best_v2_4class.pt") else "best.pt"
         model = YOLO(model_path)
         embedder = SentenceTransformer("all-MiniLM-L6-v2")
         raw = open("notes.txt", encoding="utf-8").read() if os.path.exists("notes.txt") else ""
         chunks = [c.strip() for c in raw.split("\n\n") if len(c.strip()) > 20]
         chunk_vecs = embedder.encode(chunks, normalize_embeddings=True) if chunks else []
-        return model, embedder, chunks, chunk_vecs
+        return model, embedder, chunks, chunk_vecs, model_path
 
-    model, embedder, chunks, chunk_vecs = load_models()
+    model, embedder, chunks, chunk_vecs, active_model_path = load_models()
+    st.caption(f"🧠 **Active Vision Model:** `{active_model_path}` (Multi-Class 4-Array Engine)")
 
     def retrieve(q, k=4):
         if embedder is None or len(chunks) == 0:
@@ -297,10 +296,20 @@ with tab_scan:
         with col1:
             st.image(r.plot()[:, :, ::-1], caption="⚡ Detected FVGs (Green: Bullish, Red: Bearish)", use_container_width=True)
         with col2:
-            m1, m2, m3 = st.columns(3)
+            m1, m2, m3, m4, m5 = st.columns(5)
+            bull_fvg_c = sum(1 for z in zones if "bull_fvg" in z["type"])
+            bear_fvg_c = sum(1 for z in zones if "bear_fvg" in z["type"])
+            bull_ob_c = sum(1 for z in zones if "bull_ob" in z["type"])
+            bear_ob_c = sum(1 for z in zones if "bear_ob" in z["type"])
+            
             m1.metric("Total Zones", len(zones))
-            m2.metric("Bullish FVG", sum(1 for z in zones if z["type"]=="bull_fvg"))
-            m3.metric("Bearish FVG", sum(1 for z in zones if z["type"]=="bear_fvg"))
+            m2.metric("Bull FVG", bull_fvg_c)
+            m3.metric("Bear FVG", bear_fvg_c)
+            m4.metric("Bull OB", bull_ob_c)
+            m5.metric("Bear OB", bear_ob_c)
+
+            if (bull_fvg_c > 0 and bull_ob_c > 0) or (bear_fvg_c > 0 and bear_ob_c > 0):
+                st.success("⭐ **UNICORN MODEL CONFLUENCE DETECTED!** (Order Block + FVG in same direction)")
             
             user_q = st.text_input("💬 Specific Question:", value=f"Audit for {target_model}")
             if st.button("🚀 Run Institutional Audit", type="primary", use_container_width=True):
