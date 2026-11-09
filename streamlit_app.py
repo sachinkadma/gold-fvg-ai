@@ -38,65 +38,164 @@ TOPIC_NAMES = {
 }
 
 # -----------------------------------------------------------------------------
-# SLEEK CHATGPT / CLAUDE DARK THEME STYLING
+# SLEEK HIGH-CONTRAST CHATGPT / CLAUDE DARK THEME STYLING
 # -----------------------------------------------------------------------------
 st.markdown("""
 <style>
-    /* Dark Theme Background */
-    .stApp { background-color: #0F172A; color: #F8FAFC; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    /* Global Background & High-Contrast Typography */
+    .stApp {
+        background-color: #0B1120 !important;
+        color: #F8FAFC !important;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+    }
     
-    /* Top Header */
+    /* Force ALL text elements to bright high-contrast color */
+    .stApp p, .stApp span, .stApp div, .stApp label, .stApp li, .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6 {
+        color: #F8FAFC !important;
+    }
+    
+    [data-testid="stMarkdownContainer"] p, [data-testid="stMarkdownContainer"] span, [data-testid="stMarkdownContainer"] div {
+        color: #F8FAFC !important;
+    }
+
+    /* Top Navigation Header */
     .chat-header {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: 14px 20px;
+        padding: 14px 22px;
         background: #1E293B;
         border-radius: 12px;
         margin-bottom: 20px;
         border: 1px solid #334155;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
     }
-    .chat-title { font-size: 1.35rem; font-weight: 700; color: #38BDF8; margin: 0; }
-    .chat-status { font-size: 0.85rem; color: #10B981; font-weight: 600; }
+    .chat-title { font-size: 1.4rem; font-weight: 800; color: #38BDF8 !important; margin: 0; }
+    .chat-status { font-size: 0.88rem; color: #34D399 !important; font-weight: 700; }
 
     /* Welcome Hero */
     .hero-container {
         text-align: center;
         padding: 40px 20px 20px 20px;
-        max-width: 750px;
+        max-width: 760px;
         margin: 0 auto;
     }
-    .hero-title { font-size: 2.1rem; font-weight: 700; color: #F8FAFC; margin-bottom: 10px; }
-    .hero-subtitle { font-size: 1.05rem; color: #94A3B8; margin-bottom: 25px; line-height: 1.6; }
+    .hero-title { font-size: 2.2rem; font-weight: 800; color: #FFFFFF !important; margin-bottom: 12px; }
+    .hero-subtitle { font-size: 1.08rem; color: #E2E8F0 !important; margin-bottom: 25px; line-height: 1.7; }
     
-    /* Execution Badge Card */
-    .trade-card {
-        background: #1E293B;
-        border: 1px solid #334155;
-        border-radius: 10px;
-        padding: 18px 22px;
-        margin: 14px 0px;
+    /* Chat Message Bubbles */
+    [data-testid="stChatMessage"] {
+        background-color: #1E293B !important;
+        border: 1px solid #334155 !important;
+        border-radius: 12px !important;
+        padding: 16px 20px !important;
+        margin-bottom: 14px !important;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25) !important;
     }
-    .trade-verdict { font-size: 1.35rem; font-weight: 800; margin-bottom: 4px; }
-    .trade-setup { font-size: 1.05rem; color: #F1F5F9; font-weight: 600; margin-bottom: 12px; }
-    .trade-levels { font-size: 0.95rem; line-height: 2.1; color: #F8FAFC; }
+    [data-testid="stChatMessage"] p, [data-testid="stChatMessage"] span, [data-testid="stChatMessage"] div {
+        color: #F8FAFC !important;
+        font-size: 1.02rem !important;
+        line-height: 1.7 !important;
+    }
     
-    /* Topic Badges */
+    /* Institutional Trade Execution Card (Ultra High Contrast) */
+    .trade-card {
+        background: #162032 !important;
+        border: 1px solid #475569 !important;
+        border-radius: 12px !important;
+        padding: 20px 24px !important;
+        margin: 16px 0px !important;
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45) !important;
+    }
+    .trade-verdict {
+        font-size: 1.45rem !important;
+        font-weight: 800 !important;
+        margin-bottom: 6px !important;
+        letter-spacing: 0.5px !important;
+    }
+    .trade-setup {
+        font-size: 1.15rem !important;
+        color: #FFFFFF !important;
+        font-weight: 700 !important;
+        margin-bottom: 14px !important;
+    }
+    .trade-levels {
+        font-size: 1.02rem !important;
+        line-height: 2.2 !important;
+        color: #F8FAFC !important;
+    }
+    .trade-lbl {
+        color: #E2E8F0 !important;
+        font-weight: 600 !important;
+    }
+    .trade-val-price { color: #FFFFFF !important; font-weight: 700 !important; }
+    .trade-val-cyan { color: #38BDF8 !important; font-weight: 800 !important; font-size: 1.1rem !important; }
+    .trade-val-red { color: #F87171 !important; font-weight: 800 !important; font-size: 1.08rem !important; }
+    .trade-val-green { color: #34D399 !important; font-weight: 800 !important; font-size: 1.08rem !important; }
+    .trade-val-yellow { color: #FBBF24 !important; font-weight: 800 !important; font-size: 1.08rem !important; }
+    
+    /* 104-Topics Pill Badges */
     .topic-pill {
         display: inline-block;
-        background: #0F172A;
-        border: 1px solid #38BDF8;
-        border-radius: 6px;
-        padding: 4px 10px;
-        margin: 3px;
-        font-size: 0.82rem;
-        color: #F1F5F9;
+        background: #0F172A !important;
+        border: 1px solid #38BDF8 !important;
+        border-radius: 6px !important;
+        padding: 5px 12px !important;
+        margin: 4px 3px !important;
+        font-size: 0.85rem !important;
+        color: #E2E8F0 !important;
+        font-weight: 600 !important;
+    }
+    .topic-pill b {
+        color: #FBBF24 !important;
+        margin-right: 4px !important;
     }
     
-    /* Button Styles */
+    /* Chat Input & File Uploader */
+    [data-testid="stFileUploader"] {
+        background-color: #1E293B !important;
+        border: 1px dashed #0284C7 !important;
+        border-radius: 10px !important;
+        padding: 10px 14px !important;
+    }
+    [data-testid="stFileUploader"] * {
+        color: #F8FAFC !important;
+    }
+    [data-testid="stChatInput"] textarea {
+        background-color: #1E293B !important;
+        color: #FFFFFF !important;
+        border: 1px solid #475569 !important;
+        border-radius: 10px !important;
+        font-size: 1.0rem !important;
+    }
+    [data-testid="stChatInput"] textarea::placeholder {
+        color: #94A3B8 !important;
+    }
+    
+    /* Action Buttons */
     .stButton>button {
-        border-radius: 8px;
-        font-weight: 600;
+        background-color: #0284C7 !important;
+        color: #FFFFFF !important;
+        border: 1px solid #38BDF8 !important;
+        border-radius: 8px !important;
+        font-weight: 700 !important;
+        font-size: 0.95rem !important;
+        padding: 10px 18px !important;
+        box-shadow: 0 2px 6px rgba(2, 132, 199, 0.4) !important;
+    }
+    .stButton>button:hover {
+        background-color: #0369A1 !important;
+        border-color: #7DD3FC !important;
+        color: #FFFFFF !important;
+    }
+    
+    /* Sidebar */
+    section[data-testid="stSidebar"] {
+        background-color: #0F172A !important;
+        border-right: 1px solid #334155 !important;
+    }
+    section[data-testid="stSidebar"] * {
+        color: #F8FAFC !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -427,7 +526,7 @@ st.markdown("""
 <div class="chat-header">
     <div>
         <span class="chat-title">🤖 Gold ICT AI</span>
-        <span style="color: #64748B; font-size: 0.9rem; margin-left: 10px;">XAU/USD 15m Institutional Co-Pilot</span>
+        <span style="color: #94A3B8 !important; font-size: 0.95rem; margin-left: 12px; font-weight: 500;">XAU/USD 15m Institutional Co-Pilot</span>
     </div>
     <div class="chat-status">
         ● Vision & Neural Marking Engine Active
@@ -464,20 +563,20 @@ for msg in st.session_state.messages:
             if "marked_img" in msg and msg["marked_img"] is not None:
                 st.image(msg["marked_img"], caption="⚡ Clean Marked Candlestick Chart (Candles Only + Exact ICT Markings)", use_container_width=True)
 
-            # 2. Executive Trade Card
+            # 2. Executive Trade Card (Ultra High Contrast)
             if "trade_card" in msg and msg["trade_card"] is not None:
                 tc = msg["trade_card"]
                 border_col = "#10B981" if "BUY" in tc["verdict"] else ("#EF4444" if "SELL" in tc["verdict"] else "#F59E0B")
                 st.markdown(f"""
-                <div class="trade-card" style="border-left: 5px solid {border_col};">
-                    <div class="trade-verdict" style="color: {border_col};">🎯 {tc['verdict']}</div>
+                <div class="trade-card" style="border-left: 6px solid {border_col} !important;">
+                    <div class="trade-verdict" style="color: {border_col} !important;">🎯 {tc['verdict']}</div>
                     <div class="trade-setup">{tc['setup_name']}</div>
                     <div class="trade-levels">
-                        • <span style="color: #94A3B8;">Current Price (on Chart):</span> <b style="color: #F8FAFC;">${tc.get('chart_price', 0):.2f}</b><br>
-                        • <span style="color: #94A3B8;">Entry (50% CE / Key Level):</span> <b style="color: #38BDF8; font-size: 1.05rem;">${tc['entry_p']:.2f}</b><br>
-                        • <span style="color: #94A3B8;">Invalidation Stop Loss:</span> <b style="color: #F87171;">${tc['sl_p']:.2f}</b><br>
-                        • <span style="color: #94A3B8;">Institutional TP1 (1:2 R:R):</span> <b style="color: #34D399;">${tc['tp_p']:.2f}</b><br>
-                        • <span style="color: #94A3B8;">Neural Confluence:</span> <b style="color: #FBBF24;">{tc['confluence_score']}%</b> &nbsp;|&nbsp; <span style="color: #94A3B8;">Dealing Range:</span> <b>{tc['range_zone']}</b>
+                        • <span class="trade-lbl">Current Price (on Chart):</span> <b class="trade-val-price">${tc.get('chart_price', 0):.2f}</b><br>
+                        • <span class="trade-lbl">Entry (50% CE / Key Level):</span> <b class="trade-val-cyan">${tc['entry_p']:.2f}</b><br>
+                        • <span class="trade-lbl">Invalidation Stop Loss:</span> <b class="trade-val-red">${tc['sl_p']:.2f}</b><br>
+                        • <span class="trade-lbl">Institutional TP1 (1:2 R:R):</span> <b class="trade-val-green">${tc['tp_p']:.2f}</b><br>
+                        • <span class="trade-lbl">Neural Confluence:</span> <b class="trade-val-yellow">{tc['confluence_score']}%</b> &nbsp;|&nbsp; <span class="trade-lbl">Dealing Range:</span> <b style="color: #FFFFFF !important;">{tc['range_zone']}</b>
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
@@ -485,7 +584,7 @@ for msg in st.session_state.messages:
                 # 3. 104-Topics Applied
                 if "matched_topics" in msg and msg["matched_topics"]:
                     t_html = "".join([f"<span class='topic-pill'><b>#{t['id']}</b> {t['name']}</span>" for t in msg["matched_topics"]])
-                    st.markdown(f"<div style='margin-bottom: 12px;'><b>📚 104-Topics Applied:</b><br>{t_html}</div>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='margin-bottom: 14px; color: #FFFFFF !important;'><b style='color: #F8FAFC !important;'>📚 104-Topics Applied:</b><br>{t_html}</div>", unsafe_allow_html=True)
 
             # 4. AI Explanation & Reasoning
             st.markdown(msg["content"])
