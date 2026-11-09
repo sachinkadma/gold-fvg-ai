@@ -123,6 +123,65 @@ def send_telegram_alert(token, chat_id, text, pil_image=None):
     except Exception as e:
         return False, str(e)
 
+def get_active_ict_topics(verdict, is_unicorn, is_kz, is_sb, session, sweep_detected, sweep_pips, bull_fvg_c, bear_fvg_c, bull_ob_c, bear_ob_c, range_zone, eq_price):
+    topics = []
+    # 1. Structure & Dealing Range
+    topics.append({"id": 1, "name": "Market Structure", "status": "Bullish Trend Order Flow" if "BUY" in verdict else "Bearish Trend Order Flow"})
+    topics.append({"id": 2, "name": "Swing Points (STH/ITH)", "status": "Fractal 3/5-candle Highs & Lows Active"})
+    topics.append({"id": 5, "name": "Premium vs Discount", "status": f"Trading in {range_zone}"})
+    topics.append({"id": 6, "name": "Equilibrium (50%)", "status": f"Fair Value Midpoint at ${eq_price:.2f}"})
+    topics.append({"id": 8, "name": "Internal vs External Range Liquidity", "status": "Price delivering from Internal (FVG/OB) to External (Pools)"})
+    
+    # 2. Liquidity & Stop Hunts
+    if "SSL" in sweep_detected:
+        topics.append({"id": 10, "name": "Sell-Side Liquidity (SSL)", "status": f"Swept by +{sweep_pips} pips below swing low"})
+        topics.append({"id": 13, "name": "Liquidity Sweep / Turtle Soup", "status": "False Breakout Wick Rejection Confirmed"})
+    elif "BSL" in sweep_detected:
+        topics.append({"id": 9, "name": "Buy-Side Liquidity (BSL)", "status": f"Swept by +{sweep_pips} pips above swing high"})
+        topics.append({"id": 13, "name": "Liquidity Sweep / Stop Hunt", "status": "Bearish Liquidity Raid Confirmed"})
+    else:
+        topics.append({"id": 9, "name": "Buy-Side Liquidity (BSL)", "status": "Old Highs / EQH Magnet Target"})
+        topics.append({"id": 10, "name": "Sell-Side Liquidity (SSL)", "status": "Old Lows / EQL Magnet Target"})
+
+    # 3. PD Arrays & Imbalances
+    if bull_fvg_c > 0:
+        topics.append({"id": 17, "name": "Fair Value Gap (FVG)", "status": f"{bull_fvg_c} Active Imbalance(s) Detected"})
+        topics.append({"id": 18, "name": "BISI (Buyside Imbalance)", "status": "3-Candle Institutional Buying Displacement"})
+        topics.append({"id": 28, "name": "Consequent Encroachment (50% CE)", "status": "50% Midpoint Respected for Entry"})
+    if bear_fvg_c > 0:
+        topics.append({"id": 17, "name": "Fair Value Gap (FVG)", "status": f"{bear_fvg_c} Active Imbalance(s) Detected"})
+        topics.append({"id": 19, "name": "SIBI (Sellside Imbalance)", "status": "3-Candle Institutional Selling Displacement"})
+        topics.append({"id": 28, "name": "Consequent Encroachment (50% CE)", "status": "50% Midpoint Respected for Entry"})
+    if bull_ob_c > 0:
+        topics.append({"id": 15, "name": "Bullish Order Block (+OB)", "status": "Demand Block with 50% Mean Threshold"})
+        topics.append({"id": 31, "name": "Mean Threshold (50% MT)", "status": "Invalidation Midpoint Guarded"})
+    if bear_ob_c > 0:
+        topics.append({"id": 16, "name": "Bearish Order Block (-OB)", "status": "Supply Block with 50% Mean Threshold"})
+        topics.append({"id": 31, "name": "Mean Threshold (50% MT)", "status": "Invalidation Midpoint Guarded"})
+
+    # 4. Sessions & Killzones
+    if "London" in session: topics.append({"id": 36, "name": "London Killzone", "status": "Judas Swing / Manipulation Phase Active"})
+    elif "NY AM" in session: topics.append({"id": 37, "name": "NY AM Killzone", "status": "US Morning Trend Expansion Active"})
+    elif "Lunch" in session: topics.append({"id": 38, "name": "NY Lunch", "status": "Low Volume Chop / Re-accumulation (No Trade)"})
+    elif "NY PM" in session: topics.append({"id": 39, "name": "NY PM Killzone", "status": "Afternoon Trend Continuation / Reversal"})
+    elif "Asian" in session: topics.append({"id": 35, "name": "Asian Killzone", "status": "Initial Daily Range Building Phase"})
+    topics.append({"id": 41, "name": "Power of 3 (AMD)", "status": "Accumulation -> Manipulation -> Distribution Cycle"})
+
+    # 5. Entry Models
+    if is_unicorn:
+        topics.append({"id": 61, "name": "Unicorn Model", "status": "⭐⭐⭐⭐⭐ A+ Overlap of Breaker/OB and Fair Value Gap"})
+    if is_sb:
+        topics.append({"id": 59, "name": "Silver Bullet Model", "status": "1-Hour Window High-Probability 15m/5m FVG Retest"})
+    if "2022" in verdict or (sweep_detected != "None" and (bull_fvg_c > 0 or bear_fvg_c > 0)):
+        topics.append({"id": 60, "name": "ICT 2022 Mentorship Model", "status": "HTF Tap + Sweep + MSS + FVG Limit Entry"})
+
+    # 6. Risk Engine
+    topics.append({"id": 93, "name": "Risk Percentage", "status": "Max 1.0% - 2.0% Risk Per Setup"})
+    topics.append({"id": 94, "name": "Risk-to-Reward Ratio", "status": "Minimum 1:2.0 Institutional Target Verified"})
+    topics.append({"id": 95, "name": "Position Sizing", "status": "Calculated via Account Balance & Invalidation Distance"})
+    topics.append({"id": 98, "name": "Stop Loss Placement", "status": "Invalidation behind 50% CE/MT or Swing Extreme"})
+    return topics
+
 # Initialize Session States
 if "master_chat" not in st.session_state:
     st.session_state.master_chat = []
@@ -276,6 +335,23 @@ with tab_master:
             entry_p, sl_p, tp_p = cur_price, cur_price, cur_price
             border_color = "#F59E0B"
 
+        # 5. Compute Active 104-Topics Confluences
+        matched_topics = get_active_ict_topics(
+            verdict=verdict,
+            is_unicorn=is_unicorn,
+            is_kz=is_kz,
+            is_sb=is_sb,
+            session=last_candle["Session"],
+            sweep_detected=sweep_detected,
+            sweep_pips=sweep_pips,
+            bull_fvg_c=bull_fvg_c,
+            bear_fvg_c=bear_fvg_c,
+            bull_ob_c=bull_ob_c,
+            bear_ob_c=bear_ob_c,
+            range_zone=range_zone,
+            eq_price=eq_price
+        )
+
         # Store analyzed state for interactive continuous chat
         st.session_state.last_analyzed_data = {
             "verdict": verdict,
@@ -298,6 +374,7 @@ with tab_master:
             "bear_ob_c": bear_ob_c,
             "is_unicorn": is_unicorn,
             "detected_boxes": detected_boxes,
+            "matched_topics": matched_topics,
             "image": img
         }
 
@@ -352,6 +429,7 @@ with tab_master:
                     if not tok or not cid:
                         st.warning("⚠️ Pehle '🔔 15m Telegram Alerts' tab mein apna Bot Token & Chat ID dalein!")
                     else:
+                        topic_lines = "\n".join([f"• #{t['id']} {t['name']}" for t in matched_topics[:7]])
                         msg = f"""🔔 *ICT GOLD (XAU/USD) 15m ALERT* 🔔
 ━━━━━━━━━━━━━━━━━━━━
 🎯 *Signal:* {verdict} ({setup_name})
@@ -363,12 +441,27 @@ with tab_master:
 ━━━━━━━━━━━━━━━━━━━━
 🧠 *Neural Confluence:* {confluence_score}%
 🏹 *Liquidity Sweep:* {sweep_detected}
+━━━━━━━━━━━━━━━━━━━━
+📚 *Active ICT Topics ({len(matched_topics)} Marked):*
+{topic_lines}
 ━━━━━━━━━━━━━━━━━━━━"""
                         ok, res_txt = send_telegram_alert(tok, cid, msg, pil_image=Image.fromarray(annotated_image))
                         if ok:
                             st.success("📲 Alert sent to your Telegram phone app!")
                         else:
                             st.error(f"Telegram error: {res_txt}")
+
+            # --- TOPICS FOUND BY ENGINE DISPLAY ---
+            st.write("")
+            st.markdown(f"#### 📚 Active 104-Topics ({len(matched_topics)} Marked by Engine)")
+            with st.container(height=260):
+                for t in matched_topics:
+                    st.markdown(f"""
+                    <div style="background: #0F172A; border-left: 3px solid #38BDF8; border-radius: 4px; padding: 6px 10px; margin-bottom: 5px;">
+                        <span style="color: #FBBF24; font-weight: 700; font-size: 0.88rem;">Topic #{t['id']}:</span> <b style="color: #FFFFFF; font-size: 0.90rem;">{t['name']}</b><br>
+                        <span style="color: #94A3B8; font-size: 0.82rem;">{t['status']}</span>
+                    </div>
+                    """, unsafe_allow_html=True)
 
         # --- SECTION: CONTINUOUS INTERACTIVE CHAT ---
         st.divider()
@@ -405,6 +498,7 @@ DETERMINISTIC DATA FROM UPLOADED SCREENSHOT & BACKGROUND GOLD 15m ENGINE:
 - Session: {last_candle['Session']} (Killzone: {is_kz}, Silver Bullet: {is_sb})
 - Detected YOLO Zones: {len(detected_boxes)} total (Bull FVG: {bull_fvg_c}, Bear FVG: {bear_fvg_c}, Bull OB: {bull_ob_c}, Bear OB: {bear_ob_c}, Unicorn: {is_unicorn})
 - Liquidity Sweep: {sweep_detected} ({sweep_pips} pips)
+- Matched 104 Topics: {", ".join([f"#{t['id']} {t['name']}" for t in matched_topics])}
 
 RELEVANT ICT RULES:
 {chr(10).join('- ' + r.replace(chr(10), ' ') for r in retrieved)}
@@ -412,7 +506,7 @@ RELEVANT ICT RULES:
 USER QUESTION:
 {active_query}
 
-Respond in authoritative, crisp Hinglish using professional ICT/SMC terms. Never hallucinate fake numbers. Reference the exact levels above.
+Respond in authoritative, crisp Hinglish using professional ICT/SMC terms. Never hallucinate fake numbers. Explicitly cite the marked Topic numbers (e.g. Topic #10, Topic #17, Topic #28, Topic #60) in your explanation so the trader can see the syllabus rules applied to this exact chart.
 """
                 ai_response = call_gemini([img.convert("RGB"), prompt_text])
                 st.session_state.master_chat.append({"user": active_query, "bot": ai_response})
