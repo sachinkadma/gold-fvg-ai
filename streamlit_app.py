@@ -7,7 +7,8 @@ from PIL import Image
 from deriv_client import (
     fetch_live_gold_candles,
     compute_deterministic_market_structure,
-    render_native_cameron4x_chart
+    render_native_cameron4x_chart,
+    build_cameron4x_plotly_figure
 )
 from knowledge_store import ICTKnowledgeStore
 
@@ -603,8 +604,15 @@ for msg in st.session_state.messages:
             st.markdown(msg["content"])
     else:
         with st.chat_message("assistant"):
-            # 1. Pure Cameron4x Marked Candlestick Chart
-            if "marked_img" in msg and msg["marked_img"] is not None:
+            # 1. Cameron4x TradingView Interactive Canvas & High-Res Snapshot
+            if "plotly_fig" in msg and msg["plotly_fig"] is not None:
+                chart_tabs = st.tabs(["📊 Interactive TradingView Chart (HD Zoom & Pan)", "🖼️ High-Res HD Snapshot"])
+                with chart_tabs[0]:
+                    st.plotly_chart(msg["plotly_fig"], use_container_width=True, config={"displayModeBar": True, "scrollZoom": True})
+                with chart_tabs[1]:
+                    if "marked_img" in msg and msg["marked_img"] is not None:
+                        st.image(msg["marked_img"], caption="⚡ Cameron4x Institutional Snapshot (TrueType Anti-Collision Typography)", use_container_width=True)
+            elif "marked_img" in msg and msg["marked_img"] is not None:
                 st.image(msg["marked_img"], caption="⚡ Cameron4x Candlestick Chart (MSS + Sweep + FVG + 50% CE + Elliott Wave Badges)", use_container_width=True)
 
             # 2. Executive Trade Card (Ultra High Contrast)
@@ -894,7 +902,7 @@ Return ONLY a valid JSON object matching this schema:
 - **Killzone Evaluation:** {kz_desc}
 """
 
-                # 3. RENDER PURE CAMERON4X CANDLESTICK CHART (BOUND STRICTLY TO COMPUTED FLOATS)
+                # 3. RENDER PURE CAMERON4X CANDLESTICK CHARTS (BOUND STRICTLY TO COMPUTED FLOATS)
                 try:
                     marked_chart_pil = render_native_cameron4x_chart(
                         df_live,
@@ -904,6 +912,16 @@ Return ONLY a valid JSON object matching this schema:
                     )
                 except Exception as chart_err:
                     marked_chart_pil = None
+
+                try:
+                    plotly_fig = build_cameron4x_plotly_figure(
+                        df_live,
+                        math_structure=math_struct,
+                        session_txt=session_label,
+                        show_ewt=bool(st.session_state.get("show_ewt", True))
+                    )
+                except Exception as p_err:
+                    plotly_fig = None
 
                 matched_topics = [
                     {"id": 13, "name": "Liquidity Sweep / Turtle Soup"},
@@ -937,10 +955,13 @@ Return ONLY a valid JSON object matching this schema:
                 }
             else:
                 ai_reply = f"⚠️ Unable to fetch live Gold feed: {feed_err}. Please check your connection."
+                plotly_fig = None
+                marked_chart_pil = None
 
             assistant_entry = {
                 "role": "assistant",
                 "content": ai_reply,
+                "plotly_fig": plotly_fig,
                 "marked_img": marked_chart_pil,
                 "trade_card": trade_card_data,
                 "matched_topics": matched_topics,
