@@ -712,6 +712,7 @@ def compute_deterministic_market_structure(df, account_balance=10000.0, risk_per
     }
 
 # -----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # 5. CAMERON4X OPENCV STRICT COORDINATE MAPPING CHART ENGINE
 # -----------------------------------------------------------------------------
 def render_native_cameron4x_chart(
@@ -734,181 +735,250 @@ def render_native_cameron4x_chart(
     Renders an institutional Cameron4x dark candlestick chart (940x540) on #0B1120.
     Binds visual coordinates strictly to deterministic price floats via price_to_pixel().
     Optionally overlays Elliott Wave cycle badges and polyline rails.
+    Hardened against non-integer indices, float coordinate conversions, and missing values.
     """
     w, h = 940, 540
     img = np.zeros((h, w, 3), dtype=np.uint8)
     img[:] = (32, 17, 11)  # Canvas #0B1120 in BGR
 
     if df is None or len(df) < 5:
-        cv2.putText(img, "No Live Candlestick Data Available", (w//4, h//2), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+        cv2.putText(img, "No Live Candlestick Data Available", (int(w * 0.25), int(h * 0.50)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2, cv2.LINE_AA)
         return Image.fromarray(img[:, :, ::-1])
 
-    if math_structure is not None:
-        verdict = math_structure.get("verdict", verdict)
-        setup_name = math_structure.get("setup_name", setup_name)
-        score = math_structure.get("confluence_score", score)
-        entry_p = math_structure.get("entry_ce", entry_p)
-        sl_p = math_structure.get("stop_loss", sl_p)
-        tp_p = math_structure.get("take_profit_1", tp_p)
-        sweep_p = math_structure.get("sweep_level", sweep_p)
-        mss_p = math_structure.get("mss_level", mss_p)
-        fvg_top = math_structure.get("fvg_top", fvg_top)
-        fvg_bot = math_structure.get("fvg_bottom", fvg_bot)
+    try:
+        if math_structure is not None and isinstance(math_structure, dict):
+            verdict = str(math_structure.get("verdict", verdict) or verdict)
+            setup_name = str(math_structure.get("setup_name", setup_name) or setup_name)
+            score = int(math_structure.get("confluence_score", score) or score)
+            entry_p = math_structure.get("entry_ce", entry_p)
+            sl_p = math_structure.get("stop_loss", sl_p)
+            tp_p = math_structure.get("take_profit_1", tp_p)
+            sweep_p = math_structure.get("sweep_level", sweep_p)
+            mss_p = math_structure.get("mss_level", mss_p)
+            fvg_top = math_structure.get("fvg_top", fvg_top)
+            fvg_bot = math_structure.get("fvg_bottom", fvg_bot)
 
-    is_buy = "BUY" in verdict.upper()
-    last_close = float(df.iloc[-1]["Close"])
+        is_buy = "BUY" in str(verdict).upper()
+        last_close = float(df.iloc[-1]["Close"])
 
-    COLOR_MSS    = (255, 255, 255) # Pure White
-    COLOR_SWEEP  = (248, 189, 56)  # Sky Blue #38BDF8
-    COLOR_BULL   = (129, 185, 16)  # Emerald Green #10B981
-    COLOR_BEAR   = (68, 68, 239)   # Coral Red #EF4444
-    COLOR_CE     = (6, 182, 212)   # Amber/Cyan #06B6D4
-    COLOR_TP     = (153, 211, 52)  # Mint Green #34D399
-    COLOR_SPOT   = (36, 191, 251)  # Amber #FBBF24
-    COLOR_GRID   = (45, 30, 20)    # Subdued Grid lines
+        COLOR_MSS    = (255, 255, 255) # Pure White
+        COLOR_SWEEP  = (248, 189, 56)  # Sky Blue #38BDF8
+        COLOR_BULL   = (129, 185, 16)  # Emerald Green #10B981
+        COLOR_BEAR   = (68, 68, 239)   # Coral Red #EF4444
+        COLOR_CE     = (6, 182, 212)   # Amber/Cyan #06B6D4
+        COLOR_TP     = (153, 211, 52)  # Mint Green #34D399
+        COLOR_SPOT   = (36, 191, 251)  # Amber #FBBF24
+        COLOR_GRID   = (45, 30, 20)    # Subdued Grid lines
 
-    all_lows = df["Low"].values
-    all_highs = df["High"].values
+        all_lows = df["Low"].dropna().astype(float).values
+        all_highs = df["High"].dropna().astype(float).values
 
-    if sweep_p is None: sweep_p = float(np.min(all_lows)) if is_buy else float(np.max(all_highs))
-    if mss_p is None: mss_p = float(np.median(df["Close"].values))
-    if fvg_top is None: fvg_top = round(last_close + 3.0, 2)
-    if fvg_bot is None: fvg_bot = round(last_close - 3.0, 2)
-    if entry_p is None: entry_p = round((fvg_top + fvg_bot) / 2.0, 2)
-    if sl_p is None: sl_p = round(sweep_p - 3.0 if is_buy else sweep_p + 3.0, 2)
-    if tp_p is None: tp_p = round(entry_p + 2.0 * abs(entry_p - sl_p) if is_buy else entry_p - 2.0 * abs(entry_p - sl_p), 2)
+        if len(all_lows) == 0: all_lows = np.array([last_close - 5.0])
+        if len(all_highs) == 0: all_highs = np.array([last_close + 5.0])
 
-    all_p_points = [
-        float(np.min(all_lows)), float(np.max(all_highs)),
-        entry_p, sl_p, tp_p, sweep_p, mss_p, fvg_top, fvg_bot, last_close
-    ]
-    min_p = min(all_p_points)
-    max_p = max(all_p_points)
-    p_pad = max(2.0, (max_p - min_p) * 0.08)
-    min_p -= p_pad
-    max_p += p_pad
-    p_range = max(1.0, max_p - min_p)
+        if sweep_p is None: sweep_p = float(np.min(all_lows)) if is_buy else float(np.max(all_highs))
+        else: sweep_p = float(sweep_p)
 
-    def price_to_pixel(p):
-        return int(h * 0.12 + (max_p - p) / p_range * (h * 0.72))
+        if mss_p is None: mss_p = float(np.median(df["Close"].astype(float).values))
+        else: mss_p = float(mss_p)
 
-    # 1. Price Grid & Axis Labels
-    for p_level in np.linspace(min_p, max_p, 8):
-        y_l = price_to_pixel(p_level)
-        cv2.line(img, (int(w * 0.05), y_l), (int(w * 0.86), y_l), COLOR_GRID, 1)
-        cv2.putText(img, f"${p_level:.1f}", (int(w * 0.87), y_l + 4),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.38, (148, 163, 184), 1, cv2.LINE_AA)
+        if fvg_top is None: fvg_top = round(last_close + 3.0, 2)
+        else: fvg_top = float(fvg_top)
 
-    # 2. Render Candlesticks
-    n_c = len(df)
-    chart_w = int(w * 0.79)
-    c_w = max(5, int(chart_w / n_c) - 2)
-    start_x = int(w * 0.06)
+        if fvg_bot is None: fvg_bot = round(last_close - 3.0, 2)
+        else: fvg_bot = float(fvg_bot)
 
-    for i, row in df.iterrows():
-        x_mid = start_x + i * (c_w + 3)
-        y_o = price_to_pixel(row["Open"])
-        y_c = price_to_pixel(row["Close"])
-        y_hi = price_to_pixel(row["High"])
-        y_lo = price_to_pixel(row["Low"])
+        if entry_p is None: entry_p = round((fvg_top + fvg_bot) / 2.0, 2)
+        else: entry_p = float(entry_p)
 
-        is_bull = row["Close"] >= row["Open"]
-        c_col = COLOR_BULL if is_bull else COLOR_BEAR
+        if sl_p is None: sl_p = round(sweep_p - 3.0 if is_buy else sweep_p + 3.0, 2)
+        else: sl_p = float(sl_p)
 
-        cv2.line(img, (x_mid, y_hi), (x_mid, y_lo), c_col, 1, cv2.LINE_AA)
+        if tp_p is None: tp_p = round(entry_p + 2.0 * abs(entry_p - sl_p) if is_buy else entry_p - 2.0 * abs(entry_p - sl_p), 2)
+        else: tp_p = float(tp_p)
+
+        raw_points = [
+            float(np.min(all_lows)), float(np.max(all_highs)),
+            entry_p, sl_p, tp_p, sweep_p, mss_p, fvg_top, fvg_bot, last_close
+        ]
+        valid_points = [float(p) for p in raw_points if p is not None and not np.isnan(p)]
+        if not valid_points:
+            valid_points = [last_close - 10.0, last_close + 10.0]
+
+        min_p = min(valid_points)
+        max_p = max(valid_points)
+        p_pad = max(2.0, (max_p - min_p) * 0.08)
+        min_p -= p_pad
+        max_p += p_pad
+        p_range = max(1.0, max_p - min_p)
+
+        def price_to_pixel(p):
+            try:
+                p_val = float(p) if (p is not None and not np.isnan(p)) else last_close
+            except Exception:
+                p_val = last_close
+            px_val = h * 0.12 + (max_p - p_val) / p_range * (h * 0.72)
+            return int(np.clip(px_val, 10, h - 20))
+
+        # 1. Price Grid & Axis Labels
+        for p_level in np.linspace(min_p, max_p, 8):
+            y_l = price_to_pixel(p_level)
+            cv2.line(img, (int(w * 0.05), y_l), (int(w * 0.86), y_l), COLOR_GRID, 1)
+            cv2.putText(img, f"${p_level:.1f}", (int(w * 0.87), int(y_l + 4)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.38, (148, 163, 184), 1, cv2.LINE_AA)
+
+        # 2. Render Candlesticks (using range(n_c) to guarantee int positional indexing)
+        n_c = len(df)
+        chart_w = int(w * 0.79)
+        c_w = max(4, int(chart_w / n_c) - 2)
+        start_x = int(w * 0.06)
+
+        for i in range(n_c):
+            row = df.iloc[i]
+            x_mid = int(start_x + i * (c_w + 3))
+            
+            c_open = float(row["Open"])
+            c_close = float(row["Close"])
+            c_high = float(row["High"])
+            c_low = float(row["Low"])
+
+            y_o = price_to_pixel(c_open)
+            y_c = price_to_pixel(c_close)
+            y_hi = price_to_pixel(c_high)
+            y_lo = price_to_pixel(c_low)
+
+            is_bull = c_close >= c_open
+            c_col = COLOR_BULL if is_bull else COLOR_BEAR
+
+            # Draw candle wick
+            cv2.line(img, (x_mid, y_hi), (x_mid, y_lo), c_col, 1, cv2.LINE_AA)
+            
+            # Draw candle body
+            top_b = int(min(y_o, y_c))
+            bot_b = int(max(y_o, y_c))
+            if bot_b - top_b < 2:
+                bot_b = top_b + 2
+            cv2.rectangle(img, (int(x_mid - c_w // 2), top_b), (int(x_mid + c_w // 2), bot_b), c_col, -1)
+
+            # Safe time label formatting
+            if i % 7 == 0:
+                t_str = ""
+                if "Date_NY" in row:
+                    val = row["Date_NY"]
+                    if hasattr(val, "strftime"):
+                        t_str = val.strftime("%H:%M")
+                    else:
+                        t_str = str(val)[:5]
+                elif hasattr(df.index[i], "strftime"):
+                    t_str = df.index[i].strftime("%H:%M")
+
+                if t_str:
+                    cv2.putText(img, t_str, (int(x_mid - 16), int(h * 0.90)),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.34, (148, 163, 184), 1, cv2.LINE_AA)
+
+        overlay = img.copy()
+
+        # 3. Sweep Line
+        sw_y = price_to_pixel(sweep_p)
+        sw_lbl = f"⚡ #13 SSL Swept (${sweep_p:.1f})" if is_buy else f"⚡ #13 BSL Swept (${sweep_p:.1f})"
+        cv2.line(img, (int(w * 0.08), sw_y), (int(w * 0.85), sw_y), COLOR_SWEEP, 2, cv2.LINE_AA)
+        cv2.putText(img, sw_lbl, (int(w * 0.10), int(sw_y + 16 if is_buy else sw_y - 8)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.42, COLOR_SWEEP, 1, cv2.LINE_AA)
+
+        # 4. MSS Dashed Line
+        mss_y = price_to_pixel(mss_p)
+        for x in range(int(w * 0.20), int(w * 0.85), 14):
+            cv2.line(img, (int(x), mss_y), (int(x + 8), mss_y), COLOR_MSS, 2, cv2.LINE_AA)
+        cv2.putText(img, f"⚡ #4 MSS Pivot (${mss_p:.1f})", (int(w * 0.22), int(mss_y - 6)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.42, COLOR_MSS, 1, cv2.LINE_AA)
+
+        # 5. FVG Shaded Box & 50% CE Midline
+        fvg_col = COLOR_BULL if is_buy else COLOR_BEAR
+        fvg_lbl = f"🟩 #17 Bull FVG (BISI) [${fvg_bot:.1f}-${fvg_top:.1f}]" if is_buy else f"🟥 #17 Bear FVG (SIBI) [${fvg_bot:.1f}-${fvg_top:.1f}]"
         
-        top_b = min(y_o, y_c)
-        bot_b = max(y_o, y_c)
-        if bot_b - top_b < 2: bot_b = top_b + 2
-        cv2.rectangle(img, (x_mid - c_w // 2, top_b), (x_mid + c_w // 2, bot_b), c_col, -1)
+        fvg_y1 = price_to_pixel(fvg_top)
+        fvg_y2 = price_to_pixel(fvg_bot)
+        fvg_x1 = int(w * 0.38)
+        fvg_x2 = int(w * 0.85)
 
-        if i % 7 == 0 and "Date_NY" in row:
-            t_str = row["Date_NY"].strftime("%H:%M")
-            cv2.putText(img, t_str, (x_mid - 16, int(h * 0.90)),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.34, (148, 163, 184), 1, cv2.LINE_AA)
+        cv2.rectangle(overlay, (fvg_x1, int(min(fvg_y1, fvg_y2))), (fvg_x2, int(max(fvg_y1, fvg_y2))), fvg_col, -1)
+        cv2.rectangle(img, (fvg_x1, int(min(fvg_y1, fvg_y2))), (fvg_x2, int(max(fvg_y1, fvg_y2))), fvg_col, 2)
+        
+        ce_y = price_to_pixel(entry_p)
+        for x in range(fvg_x1, fvg_x2, 8):
+            cv2.line(img, (int(x), ce_y), (int(x + 5), ce_y), COLOR_CE, 2, cv2.LINE_AA)
+        cv2.putText(img, fvg_lbl, (int(fvg_x1 + 6), int(min(fvg_y1, fvg_y2) - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (255, 255, 255), 1, cv2.LINE_AA)
+        cv2.putText(img, f"🔹 #28 50% CE Entry (${entry_p:.2f})", (int(fvg_x1 + 6), int(ce_y - 4)), cv2.FONT_HERSHEY_SIMPLEX, 0.42, COLOR_CE, 1, cv2.LINE_AA)
 
-    overlay = img.copy()
+        # 6. Target 1:2 R:R Rail
+        tp_y = price_to_pixel(tp_p)
+        for x in range(int(w * 0.30), int(w * 0.85), 14):
+            cv2.line(img, (int(x), tp_y), (int(x + 8), tp_y), COLOR_TP, 2, cv2.LINE_AA)
+        cv2.putText(img, f"🎯 #94 Institutional Target 1:2 R:R (${tp_p:.2f})", (int(w * 0.32), int(tp_y - 6 if is_buy else tp_y + 16)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.44, COLOR_TP, 1, cv2.LINE_AA)
 
-    # 3. Sweep Line
-    sw_y = price_to_pixel(sweep_p)
-    sw_lbl = f"⚡ #13 SSL Swept (${sweep_p:.1f})" if is_buy else f"⚡ #13 BSL Swept (${sweep_p:.1f})"
-    cv2.line(img, (int(w * 0.08), sw_y), (int(w * 0.85), sw_y), COLOR_SWEEP, 2, cv2.LINE_AA)
-    cv2.putText(img, sw_lbl, (int(w * 0.10), sw_y + 16 if is_buy else sw_y - 8),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.42, COLOR_SWEEP, 1, cv2.LINE_AA)
+        # 7. Live Spot Price Dotted Line & Right-Scale Badge
+        cur_y = price_to_pixel(last_close)
+        for x in range(int(w * 0.06), int(w * 0.86), 6):
+            cv2.line(img, (int(x), cur_y), (int(x + 3), cur_y), COLOR_SPOT, 1, cv2.LINE_AA)
+        cv2.rectangle(img, (int(w * 0.86), int(cur_y - 10)), (int(w - 6), int(cur_y + 10)), (15, 23, 42), -1)
+        cv2.rectangle(img, (int(w * 0.86), int(cur_y - 10)), (int(w - 6), int(cur_y + 10)), COLOR_SPOT, 1)
+        cv2.putText(img, f"${last_close:.2f}", (int(w * 0.865), int(cur_y + 4)), cv2.FONT_HERSHEY_SIMPLEX, 0.36, COLOR_SPOT, 1, cv2.LINE_AA)
 
-    # 4. MSS Dashed Line
-    mss_y = price_to_pixel(mss_p)
-    for x in range(int(w * 0.20), int(w * 0.85), 14):
-        cv2.line(img, (x, mss_y), (x + 8, mss_y), COLOR_MSS, 2, cv2.LINE_AA)
-    cv2.putText(img, f"⚡ #4 MSS Pivot (${mss_p:.1f})", (int(w * 0.22), mss_y - 6),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.42, COLOR_MSS, 1, cv2.LINE_AA)
+        # 8. ELLIOTT WAVE (EWT) OVERLAY
+        if bool(show_ewt) and math_structure is not None:
+            ewt = math_structure.get("elliott_wave", {})
+            if isinstance(ewt, dict):
+                wave_pts = ewt.get("wave_points", [])
+                if wave_pts and isinstance(wave_pts, list) and len(wave_pts) >= 3:
+                    # Connect wave pivots with dashed rail
+                    for w_i in range(len(wave_pts) - 1):
+                        p_start = wave_pts[w_i]
+                        p_end = wave_pts[w_i + 1]
+                        try:
+                            s_idx = int(p_start.get("idx", 0))
+                            e_idx = int(p_end.get("idx", 0))
+                            x1 = int(start_x + s_idx * (c_w + 3))
+                            y1 = int(price_to_pixel(p_start.get("price", last_close)))
+                            x2 = int(start_x + e_idx * (c_w + 3))
+                            y2 = int(price_to_pixel(p_end.get("price", last_close)))
+                            cv2.line(img, (x1, y1), (x2, y2), (248, 189, 56), 1, cv2.LINE_AA)
+                        except Exception:
+                            continue
 
-    # 5. FVG Shaded Box & 50% CE Midline
-    fvg_col = COLOR_BULL if is_buy else COLOR_BEAR
-    fvg_lbl = f"🟩 #17 Bull FVG (BISI) [${fvg_bot:.1f}-${fvg_top:.1f}]" if is_buy else f"🟥 #17 Bear FVG (SIBI) [${fvg_bot:.1f}-${fvg_top:.1f}]"
-    
-    fvg_y1 = price_to_pixel(fvg_top)
-    fvg_y2 = price_to_pixel(fvg_bot)
-    fvg_x1 = int(w * 0.38)
-    fvg_x2 = int(w * 0.85)
+                    # Draw circular badges over wave pivots
+                    for p_pt in wave_pts:
+                        try:
+                            pt_idx = int(p_pt.get("idx", 0))
+                            px = int(start_x + pt_idx * (c_w + 3))
+                            py = int(price_to_pixel(p_pt.get("price", last_close)))
+                            lbl = str(p_pt.get("label", ""))
+                            b_col = (56, 189, 248) if lbl not in ["(3)", "(5)"] else (36, 191, 251)
+                            cv2.circle(img, (px, py), 11, (15, 23, 42), -1)
+                            cv2.circle(img, (px, py), 11, b_col, 1, cv2.LINE_AA)
+                            cv2.putText(img, lbl, (int(px - 8), int(py + 4)), cv2.FONT_HERSHEY_SIMPLEX, 0.30, (255, 255, 255), 1, cv2.LINE_AA)
+                        except Exception:
+                            continue
 
-    cv2.rectangle(overlay, (fvg_x1, min(fvg_y1, fvg_y2)), (fvg_x2, max(fvg_y1, fvg_y2)), fvg_col, -1)
-    cv2.rectangle(img, (fvg_x1, min(fvg_y1, fvg_y2)), (fvg_x2, max(fvg_y1, fvg_y2)), fvg_col, 2)
-    
-    ce_y = price_to_pixel(entry_p)
-    for x in range(fvg_x1, fvg_x2, 8):
-        cv2.line(img, (x, ce_y), (x + 5, ce_y), COLOR_CE, 2, cv2.LINE_AA)
-    cv2.putText(img, fvg_lbl, (fvg_x1 + 6, min(fvg_y1, fvg_y2) - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (255, 255, 255), 1, cv2.LINE_AA)
-    cv2.putText(img, f"🔹 #28 50% CE Entry (${entry_p:.2f})", (fvg_x1 + 6, ce_y - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.42, COLOR_CE, 1, cv2.LINE_AA)
+        cv2.addWeighted(overlay, 0.28, img, 0.72, 0, img)
 
-    # 6. Target 1:2 R:R Rail
-    tp_y = price_to_pixel(tp_p)
-    for x in range(int(w * 0.30), int(w * 0.85), 14):
-        cv2.line(img, (x, tp_y), (x + 8, tp_y), COLOR_TP, 2, cv2.LINE_AA)
-    cv2.putText(img, f"🎯 #94 Institutional Target 1:2 R:R (${tp_p:.2f})", (int(w * 0.32), tp_y - 6 if is_buy else tp_y + 16),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.44, COLOR_TP, 1, cv2.LINE_AA)
+        # 9. Top Institutional Watermark Header
+        banner_h = 36
+        cv2.rectangle(img, (0, 0), (w, banner_h), (15, 23, 42), -1)
+        cv2.line(img, (0, banner_h), (w, banner_h), (51, 65, 85), 1)
+        ewt_info = ""
+        if math_structure and isinstance(math_structure, dict):
+            ewt_phase = math_structure.get("elliott_wave", {}).get("cycle_phase", "")
+            if ewt_phase:
+                ewt_info = f" | EWT: {str(ewt_phase)[:18]}"
+        status_text = f"DERIV SPOT 15m | {verdict} | Spot: ${last_close:.2f} | Score: {score}%{ewt_info}"
+        cv2.putText(img, status_text, (14, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.44, (251, 191, 36), 1, cv2.LINE_AA)
 
-    # 7. Live Spot Price Dotted Line & Right-Scale Badge
-    cur_y = price_to_pixel(last_close)
-    for x in range(int(w * 0.06), int(w * 0.86), 6):
-        cv2.line(img, (x, cur_y), (x + 3, cur_y), COLOR_SPOT, 1, cv2.LINE_AA)
-    cv2.rectangle(img, (int(w * 0.86), cur_y - 10), (w - 6, cur_y + 10), (15, 23, 42), -1)
-    cv2.rectangle(img, (int(w * 0.86), cur_y - 10), (w - 6, cur_y + 10), COLOR_SPOT, 1)
-    cv2.putText(img, f"${last_close:.2f}", (int(w * 0.865), cur_y + 4), cv2.FONT_HERSHEY_SIMPLEX, 0.36, COLOR_SPOT, 1, cv2.LINE_AA)
+        return Image.fromarray(img[:, :, ::-1])
 
-    # 8. ELLIOTT WAVE (EWT) OVERLAY
-    if show_ewt and math_structure is not None:
-        ewt = math_structure.get("elliott_wave", {})
-        wave_pts = ewt.get("wave_points", [])
-        if wave_pts and len(wave_pts) >= 3:
-            # Connect wave pivots with dashed rail
-            for w_i in range(len(wave_pts) - 1):
-                p_start = wave_pts[w_i]
-                p_end = wave_pts[w_i + 1]
-                x1 = start_x + p_start["idx"] * (c_w + 3)
-                y1 = price_to_pixel(p_start["price"])
-                x2 = start_x + p_end["idx"] * (c_w + 3)
-                y2 = price_to_pixel(p_end["price"])
-                cv2.line(img, (x1, y1), (x2, y2), (248, 189, 56), 1, cv2.LINE_AA)
-
-            # Draw circular badges over wave pivots
-            for p_pt in wave_pts:
-                px = start_x + p_pt["idx"] * (c_w + 3)
-                py = price_to_pixel(p_pt["price"])
-                lbl = p_pt["label"]
-                b_col = (56, 189, 248) if lbl not in ["(3)", "(5)"] else (36, 191, 251)
-                cv2.circle(img, (px, py), 11, (15, 23, 42), -1)
-                cv2.circle(img, (px, py), 11, b_col, 1, cv2.LINE_AA)
-                cv2.putText(img, lbl, (px - 8, py + 4), cv2.FONT_HERSHEY_SIMPLEX, 0.30, (255, 255, 255), 1, cv2.LINE_AA)
-
-    cv2.addWeighted(overlay, 0.28, img, 0.72, 0, img)
-
-    # 9. Top Institutional Watermark Header
-    banner_h = 36
-    cv2.rectangle(img, (0, 0), (w, banner_h), (15, 23, 42), -1)
-    cv2.line(img, (0, banner_h), (w, banner_h), (51, 65, 85), 1)
-    ewt_info = f" | EWT: {math_structure.get('elliott_wave', {}).get('cycle_phase', 'EWT_SCAN')[:18]}" if math_structure else ""
-    status_text = f"DERIV SPOT 15m | {verdict} | Spot: ${last_close:.2f} | Score: {score}%{ewt_info}"
-    cv2.putText(img, status_text, (14, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.44, (251, 191, 36), 1, cv2.LINE_AA)
-
-    return Image.fromarray(img[:, :, ::-1])
+    except Exception as render_exc:
+        # Fallback rendering on unexpected exception to prevent app crash
+        cv2.putText(img, f"Chart Rendering Exception: {str(render_exc)[:50]}", (20, h // 2),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 1, cv2.LINE_AA)
+        return Image.fromarray(img[:, :, ::-1])

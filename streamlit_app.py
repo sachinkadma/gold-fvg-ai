@@ -462,7 +462,12 @@ with st.sidebar:
                 if df_a is not None and not df_a.empty:
                     s_label, _ = get_live_ny_session()
                     m_struct = compute_deterministic_market_structure(df_a, account_balance=st.session_state.account_balance, risk_percent=st.session_state.risk_percent)
-                    img_a = render_native_cameron4x_chart(df_a, math_structure=m_struct, session_txt=s_label, show_ewt=st.session_state.show_ewt)
+                    img_a = render_native_cameron4x_chart(
+                        df_a,
+                        math_structure=m_struct,
+                        session_txt=s_label,
+                        show_ewt=bool(st.session_state.get("show_ewt", True))
+                    )
                     a_text = f"""🔔 *DERIV LIVE 15m GOLD (frxXAUUSD) ALERT* 🔔
 ━━━━━━━━━━━━━━━━━━━━
 🎯 *Signal:* {m_struct['verdict']} ({m_struct['action']})
@@ -809,12 +814,15 @@ Return ONLY a valid JSON object matching this schema:
 """
 
                 # 3. RENDER PURE CAMERON4X CANDLESTICK CHART (BOUND STRICTLY TO COMPUTED FLOATS)
-                marked_chart_pil = render_native_cameron4x_chart(
-                    df_live,
-                    math_structure=math_struct,
-                    session_txt=session_label,
-                    show_ewt=st.session_state.show_ewt
-                )
+                try:
+                    marked_chart_pil = render_native_cameron4x_chart(
+                        df_live,
+                        math_structure=math_struct,
+                        session_txt=session_label,
+                        show_ewt=bool(st.session_state.get("show_ewt", True))
+                    )
+                except Exception as chart_err:
+                    marked_chart_pil = None
 
                 matched_topics = [
                     {"id": 13, "name": "Liquidity Sweep / Turtle Soup"},
