@@ -13,7 +13,7 @@ class ICTKnowledgeStore:
     """
     def __init__(self, knowledge_dir="knowledge"):
         self.knowledge_dir = knowledge_dir
-        self.categories = ["liquidity", "structure", "entry_models", "risk"]
+        self.categories = ["liquidity", "structure", "entry_models", "risk", "elliott_wave"]
         self.topics = []
         self.topic_map = {}
         self._load_knowledge()

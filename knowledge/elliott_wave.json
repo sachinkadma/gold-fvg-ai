@@ -1,0 +1,68 @@
+{
+  "category": "elliott_wave",
+  "description": "Elliott Wave Theory (EWT) motive and corrective cycles mathematically integrated with ICT institutional liquidity footprints.",
+  "topics": [
+    {
+      "id": 105,
+      "name": "5-Wave Motive Impulse Sequence & 3 Cardinal Axioms",
+      "killzones": ["London", "NY_AM", "Silver_Bullet", "NY_PM"],
+      "deterministic_criteria": {
+        "rule_1_w2_retracement": "Wave 2 must never retrace more than 100% of Wave 1 (P2 > P0 for bullish; P2 < P0 for bearish)",
+        "rule_2_w3_length": "Wave 3 is never the shortest wave among Waves 1, 3, and 5 (length(W3) >= min(length(W1), length(W5)))",
+        "rule_3_w4_overlap": "Wave 4 never enters the price territory of Wave 1 (P4 > P1 for bullish; P4 < P1 for bearish)",
+        "pattern_structure": "5-3-5-3-5 motive sequence"
+      },
+      "rules": [
+        "The 3 Cardinal Rules are absolute mathematical axioms. If any rule fails, the wave structure is disqualified.",
+        "Wave 3 is typically the longest and most aggressive institutional displacement wave and must never be the shortest.",
+        "Wave 4 consolidation must strictly respect and defend the high of Wave 1 in a bull trend."
+      ]
+    },
+    {
+      "id": 106,
+      "name": "Corrective Cycles (Zigzag, Flat, & Expanded B-Wave Sweeps)",
+      "killzones": ["London", "NY_AM", "Silver_Bullet", "NY_PM"],
+      "deterministic_criteria": {
+        "zigzag_5_3_5": "Sharp corrective decline where Wave B retraces 50-61.8% of Wave A",
+        "flat_3_3_5": "Sideways corrective range where Wave B tests Wave A origin",
+        "expanded_flat": "Wave B sweeps beyond Wave 5 high (BSL Turtle Soup) before Wave C aggressively liquidates below Wave A low"
+      },
+      "rules": [
+        "Corrective structures rebalance fair value after motive expansions.",
+        "An Expanded Flat B-wave is an institutional liquidity hunt designed to trap retail breakout traders."
+      ]
+    },
+    {
+      "id": 107,
+      "name": "Fibonacci Projection Multiples & Wave Relationships",
+      "killzones": ["London", "NY_AM", "Silver_Bullet", "NY_PM"],
+      "deterministic_criteria": {
+        "wave_3_target_minimum": "1.618 * Wave 1 length",
+        "wave_3_extended_target": "2.000 to 2.618 * Wave 1 length",
+        "wave_2_retracement_target": "0.500 to 0.618 of Wave 1 (Consequent Encroachment / OTE)",
+        "wave_4_retracement_target": "0.236 to 0.382 of Wave 3"
+      },
+      "rules": [
+        "Wave 3 institutional expansions statistically reach at least 1.618x the length of Wave 1.",
+        "Wave 2 pullbacks terminate inside OTE (62%-79%) or at the 50% CE of the Wave 1 displacement FVG."
+      ]
+    },
+    {
+      "id": 108,
+      "name": "ICT & Elliott Wave Fusion (Liquidity & Cycle Synthesis)",
+      "killzones": ["London", "NY_AM", "Silver_Bullet", "NY_PM"],
+      "deterministic_criteria": {
+        "wave_1_ict": "Displacement momentum causing initial Market Structure Shift (MSS)",
+        "wave_2_ict": "Discount retest of Bullish FVG at 50% Consequent Encroachment (50% CE)",
+        "wave_3_ict": "Run on internal liquidity with multiple consecutive FVGs and order flow dominance",
+        "wave_4_ict": "Internal range retest defending former resistance as support",
+        "wave_5_ict": "Terminal exhaustion raid into major external BSL/SSL pool forming Turtle Soup",
+        "wave_abc_ict": "Smart Money Reversal (SMR) confirming major HTF Market Structure Shift"
+      },
+      "rules": [
+        "Never buy the top of Wave 5; Wave 5 is an institutional distribution phase into retail buy stops.",
+        "The highest-probability ICT entries occur during Wave 2 (FVG 50% CE limit entry) targeting Wave 3 expansion."
+      ]
+    }
+  ]
+}
