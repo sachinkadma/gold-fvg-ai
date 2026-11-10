@@ -9,3 +9,4 @@ pyarrow
 requests
 plotly
 websocket-client
+MetaTrader5; sys_platform == 'win32'

@@ -12,13 +12,47 @@ NY_TZ = zoneinfo.ZoneInfo("America/New_York")
 # -----------------------------------------------------------------------------
 # 1. LIVE GOLD (XAU/USD / frxXAUUSD) 15m DATA FEED
 # -----------------------------------------------------------------------------
-def fetch_live_gold_candles(granularity=900, count=50):
+def fetch_live_gold_candles(
+    granularity=900,
+    count=50,
+    source="AUTO",
+    mt5_login=115395873,
+    mt5_password=r"@iVu5gTh",
+    mt5_server="MetaQuotes-Demo",
+    mt5_symbol="XAUUSD"
+):
     """
-    Fetches real-time 15m Gold (frxXAUUSD) candlestick array.
-    Primary: Deriv Public WebSocket Gateway (app_id=1089).
-    Failover: Live Gold Spot REST feed (GC=F) if WebSocket hits regional Cloudflare filter.
+    Fetches real-time 15m Gold candlestick array.
+    Sources supported:
+      - 'MT5': Direct MetaTrader 5 account connection (Account 115395873 @ MetaQuotes-Demo)
+      - 'DERIV': Deriv Public WebSocket Gateway (frxXAUUSD)
+      - 'SPOT': Live Gold Spot REST feed (GC=F)
+      - 'AUTO': Priority MT5 (if on Windows with terminal) -> Deriv WebSocket -> Gold Spot
     Returns: df, cur_price, source_name, error_msg
     """
+    # 1. Attempt MetaTrader 5 if selected or in AUTO mode
+    if source in ["MT5", "AUTO"]:
+        try:
+            from mt5_client import fetch_mt5_gold_candles, is_mt5_available
+            if is_mt5_available():
+                df_mt5, cur_p_mt5, feed_name_mt5, err_mt5 = fetch_mt5_gold_candles(
+                    login=mt5_login,
+                    password=mt5_password,
+                    server=mt5_server,
+                    symbol=mt5_symbol,
+                    timeframe="M15",
+                    count=count
+                )
+                if df_mt5 is not None and not df_mt5.empty:
+                    return df_mt5, cur_p_mt5, feed_name_mt5, None
+                elif source == "MT5":
+                    # If user explicitly asked for MT5, return the exact error
+                    return None, 0.0, "MetaTrader 5", err_mt5
+        except Exception as e:
+            if source == "MT5":
+                return None, 0.0, "MetaTrader 5", f"MT5 connection error: {str(e)}"
+
+    # 2. Deriv Public WebSocket Gateway (app_id=1089)
     ws_endpoints = [
         "wss://ws.derivws.com/websockets/v3?app_id=1089",
         "wss://ws.binaryws.com/websockets/v3?app_id=1089"
@@ -65,7 +99,7 @@ def fetch_live_gold_candles(granularity=900, count=50):
         except Exception:
             continue
 
-    # Resilient Live Spot Failover (Yahoo Finance REST GC=F / XAUUSD Spot)
+    # 3. Resilient Live Spot Failover (Yahoo Finance REST GC=F / XAUUSD Spot)
     try:
         url = "https://query1.finance.yahoo.com/v8/finance/chart/GC=F?interval=15m&range=3d"
         headers = {"User-Agent": "Mozilla/5.0"}

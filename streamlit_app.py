@@ -389,6 +389,16 @@ if "last_spot_source" not in st.session_state:
     st.session_state.last_spot_source = "Deriv Gateway"
 if "show_ewt" not in st.session_state:
     st.session_state.show_ewt = True
+if "feed_source_choice" not in st.session_state:
+    st.session_state.feed_source_choice = "🏆 MetaTrader 5 (XAUUSD Demo)"
+if "mt5_login" not in st.session_state:
+    st.session_state.mt5_login = 115395873
+if "mt5_password" not in st.session_state:
+    st.session_state.mt5_password = "@iVu5gTh"
+if "mt5_server" not in st.session_state:
+    st.session_state.mt5_server = "MetaQuotes-Demo"
+if "mt5_symbol" not in st.session_state:
+    st.session_state.mt5_symbol = "XAUUSD"
 
 # -----------------------------------------------------------------------------
 # SIDEBAR: SETTINGS, RISK, & ELLIOTT WAVE CONTROLS
@@ -426,6 +436,36 @@ with st.sidebar:
                     st.error(f"API Error: {err}")
 
     st.divider()
+    st.markdown("#### 📊 Live Gold Data Feed Source")
+    feed_opts = [
+        "🏆 MetaTrader 5 (XAUUSD Demo)",
+        "⚡ Deriv WebSocket (Spot frxXAUUSD)",
+        "🌐 Live Gold Spot REST (GC=F)"
+    ]
+    cur_feed_idx = 0
+    if st.session_state.feed_source_choice in feed_opts:
+        cur_feed_idx = feed_opts.index(st.session_state.feed_source_choice)
+    feed_choice = st.selectbox(
+        "Select Market Feed",
+        feed_opts,
+        index=cur_feed_idx,
+        help="Choose between MetaTrader 5 live account candles or Deriv WebSocket gateway"
+    )
+    st.session_state.feed_source_choice = feed_choice
+
+    if "MetaTrader 5" in feed_choice:
+        with st.expander("⚙️ MT5 Account Credentials", expanded=False):
+            m_login = st.number_input("MT5 Login ID", value=st.session_state.mt5_login, step=1)
+            m_pwd = st.text_input("MT5 Password", value=st.session_state.mt5_password, type="password")
+            m_srv = st.text_input("Server Name", value=st.session_state.mt5_server)
+            m_sym = st.text_input("Symbol", value=st.session_state.mt5_symbol)
+            st.session_state.mt5_login = int(m_login)
+            st.session_state.mt5_password = m_pwd.strip()
+            st.session_state.mt5_server = m_srv.strip()
+            st.session_state.mt5_symbol = m_sym.strip()
+            st.caption(f"Connected to **{m_sym}** on **{m_srv}** (Acc: `{m_login}`)")
+
+    st.divider()
     st.markdown("#### 🌊 Elliott Wave (EWT) Settings")
     show_ewt_val = st.checkbox("🌊 Show Elliott Wave Cycle (1-5 / A-C)", value=st.session_state.show_ewt)
     st.session_state.show_ewt = show_ewt_val
@@ -457,8 +497,17 @@ with st.sidebar:
         if not st.session_state.tg_token or not st.session_state.tg_chat_id:
             st.error("Fill Token & Chat ID!")
         else:
-            with st.spinner("Fetching Deriv 15m spot candles & generating alert..."):
-                df_a, p_a, src_a, err_a = fetch_live_gold_candles(granularity=900, count=40)
+            with st.spinner("Fetching 15m Gold candles & generating alert..."):
+                src_key = "MT5" if "MetaTrader 5" in st.session_state.feed_source_choice else ("DERIV" if "Deriv" in st.session_state.feed_source_choice else "SPOT")
+                df_a, p_a, src_a, err_a = fetch_live_gold_candles(
+                    granularity=900,
+                    count=40,
+                    source=src_key,
+                    mt5_login=st.session_state.mt5_login,
+                    mt5_password=st.session_state.mt5_password,
+                    mt5_server=st.session_state.mt5_server,
+                    mt5_symbol=st.session_state.mt5_symbol
+                )
                 if df_a is not None and not df_a.empty:
                     s_label, _ = get_live_ny_session()
                     m_struct = compute_deterministic_market_structure(df_a, account_balance=st.session_state.account_balance, risk_percent=st.session_state.risk_percent)
@@ -468,7 +517,7 @@ with st.sidebar:
                         session_txt=s_label,
                         show_ewt=bool(st.session_state.get("show_ewt", True))
                     )
-                    a_text = f"""🔔 *DERIV LIVE 15m GOLD (frxXAUUSD) ALERT* 🔔
+                    a_text = f"""🔔 *LIVE 15m GOLD ({src_a}) ALERT* 🔔
 ━━━━━━━━━━━━━━━━━━━━
 🎯 *Signal:* {m_struct['verdict']} ({m_struct['action']})
 📍 *Spot Price:* ${p_a:.2f}
@@ -507,7 +556,7 @@ st.markdown(f"""
     <div>
         <span class="chat-title">🧠 Gold ICT AGI</span>
         <span class="chat-badge">SWARM AGI + EWT</span>
-        <span class="chat-ticker">🟡 frxXAUUSD: <b>{spot_display}</b></span>
+        <span class="chat-ticker">🟡 {st.session_state.mt5_symbol if "MetaTrader" in st.session_state.feed_source_choice else "frxXAUUSD"}: <b>{spot_display}</b></span>
     </div>
     <div class="chat-status" style="color: {session_color} !important;">
         ● {session_label}
@@ -634,14 +683,23 @@ st.write("")
 col_scan, col_ref, col_up = st.columns([2.5, 1.2, 2.3])
 with col_scan:
     scan_live_clicked = st.button(
-        "⚡ Scan Live 15m Gold (Deriv Spot)",
+        "⚡ Scan Live 15m Gold (MT5 / Broker)",
         use_container_width=True,
         type="primary",
-        help="Pull live 15m candlesticks from Deriv WebSocket & execute deterministic math engine"
+        help="Pull real-time 15m candlesticks from MetaTrader 5 or Deriv & execute deterministic engine"
     )
 with col_ref:
     if st.button("🔄 Refresh", use_container_width=True, help="Update live prices and session clock"):
-        df_quick, p_quick, s_quick, _ = fetch_live_gold_candles(granularity=900, count=10)
+        src_key = "MT5" if "MetaTrader 5" in st.session_state.feed_source_choice else ("DERIV" if "Deriv" in st.session_state.feed_source_choice else "SPOT")
+        df_quick, p_quick, s_quick, _ = fetch_live_gold_candles(
+            granularity=900,
+            count=10,
+            source=src_key,
+            mt5_login=st.session_state.mt5_login,
+            mt5_password=st.session_state.mt5_password,
+            mt5_server=st.session_state.mt5_server,
+            mt5_symbol=st.session_state.mt5_symbol
+        )
         if df_quick is not None and not df_quick.empty:
             st.session_state.last_spot_price = p_quick
             st.session_state.last_spot_source = s_quick
@@ -667,7 +725,7 @@ if trigger_live_scan or is_new_chart_upload or has_text_prompt:
 
     if trigger_live_scan:
         is_live_deriv_mode = True
-        user_text = "⚡ Scan Live 15m Gold (Deriv Spot frxXAUUSD) with Deterministic Algorithmic Math, Elliott Wave Cycle Validation, and 4-Agent Unanimous Consensus."
+        user_text = f"⚡ Scan Live 15m Gold ({st.session_state.feed_source_choice}) with Deterministic Algorithmic Math, Elliott Wave Cycle Validation, and 4-Agent Unanimous Consensus."
     elif is_new_chart_upload:
         st.session_state.processed_file_names.add(uploaded_chart.name)
         input_img = Image.open(uploaded_chart)
@@ -692,7 +750,16 @@ if trigger_live_scan or is_new_chart_upload or has_text_prompt:
             ai_reply = ""
 
             is_kz_pass, active_kz, kz_code, kz_desc = knowledge_store.get_killzone_window(datetime.now(NY_TZ))
-            df_live, spot_price, feed_source, feed_err = fetch_live_gold_candles(granularity=900, count=45)
+            src_key = "MT5" if "MetaTrader 5" in st.session_state.feed_source_choice else ("DERIV" if "Deriv" in st.session_state.feed_source_choice else "SPOT")
+            df_live, spot_price, feed_source, feed_err = fetch_live_gold_candles(
+                granularity=900,
+                count=45,
+                source=src_key,
+                mt5_login=st.session_state.mt5_login,
+                mt5_password=st.session_state.mt5_password,
+                mt5_server=st.session_state.mt5_server,
+                mt5_symbol=st.session_state.mt5_symbol
+            )
             
             if df_live is not None and not df_live.empty:
                 st.session_state.last_spot_price = spot_price
