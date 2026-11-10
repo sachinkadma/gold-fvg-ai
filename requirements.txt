@@ -1,12 +1,12 @@
 streamlit
-ultralytics
-opencv-python-headless
-sentence-transformers
 numpy
 Pillow
-yfinance
-pyarrow
 requests
 plotly
+pyarrow
+yfinance
 websocket-client
+sentence-transformers
+ultralytics
+opencv-python-headless
 MetaTrader5; sys_platform == 'win32'

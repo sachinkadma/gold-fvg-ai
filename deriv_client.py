@@ -2,12 +2,26 @@ import json, ssl, time, os
 import pandas as pd
 import numpy as np
 from datetime import datetime
-import zoneinfo
 import requests
 from PIL import Image, ImageDraw, ImageFont
-import plotly.graph_objects as go
 
-NY_TZ = zoneinfo.ZoneInfo("America/New_York")
+try:
+    import zoneinfo
+    NY_TZ = zoneinfo.ZoneInfo("America/New_York")
+except Exception:
+    try:
+        from backports import zoneinfo
+        NY_TZ = zoneinfo.ZoneInfo("America/New_York")
+    except Exception:
+        import datetime as dt
+        NY_TZ = dt.timezone.utc
+
+try:
+    import plotly.graph_objects as go
+    HAS_PLOTLY = True
+except Exception:
+    go = None
+    HAS_PLOTLY = False
 
 # -----------------------------------------------------------------------------
 # 1. LIVE GOLD (XAU/USD / frxXAUUSD) 15m DATA FEED
@@ -1132,6 +1146,9 @@ def build_cameron4x_plotly_figure(
       - Hover tooltips showing exact candle metrics and timestamps.
       - Elliott Wave (0)-(5) cycle nodes with motive connecting trendline.
     """
+    if not HAS_PLOTLY or go is None:
+        return None
+
     if df is None or len(df) < 5:
         fig = go.Figure()
         fig.add_annotation(text="No Live Candlestick Data Available", showarrow=False, font=dict(size=18, color="#FFFFFF"))

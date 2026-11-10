@@ -1,9 +1,26 @@
 import streamlit as st
-import os, json, zoneinfo, io, requests, cv2, re, base64
+import os, json, io, requests, re, base64
 import pandas as pd
 import numpy as np
 from datetime import datetime, time
 from PIL import Image
+
+try:
+    import zoneinfo
+    NY_TZ = zoneinfo.ZoneInfo("America/New_York")
+except Exception:
+    try:
+        from backports import zoneinfo
+        NY_TZ = zoneinfo.ZoneInfo("America/New_York")
+    except Exception:
+        import datetime as dt
+        NY_TZ = dt.timezone.utc
+
+try:
+    import cv2
+except Exception:
+    cv2 = None
+
 from deriv_client import (
     fetch_live_gold_candles,
     compute_deterministic_market_structure,
@@ -18,8 +35,6 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed"
 )
-
-NY_TZ = zoneinfo.ZoneInfo("America/New_York")
 
 # -----------------------------------------------------------------------------
 # KNOWLEDGE STORE & TEMPORAL KILLZONE RETRIEVAL

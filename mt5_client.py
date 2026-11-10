@@ -1,9 +1,17 @@
 import os
-import zoneinfo
 import pandas as pd
 from datetime import datetime
 
-NY_TZ = zoneinfo.ZoneInfo("America/New_York")
+try:
+    import zoneinfo
+    NY_TZ = zoneinfo.ZoneInfo("America/New_York")
+except Exception:
+    try:
+        from backports import zoneinfo
+        NY_TZ = zoneinfo.ZoneInfo("America/New_York")
+    except Exception:
+        import datetime as dt
+        NY_TZ = dt.timezone.utc
 
 DEFAULT_MT5_PATH = r"C:\Program Files\MetaTrader 5\terminal64.exe"
 
