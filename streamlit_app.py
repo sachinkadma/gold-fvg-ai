@@ -399,6 +399,8 @@ if "mt5_server" not in st.session_state:
     st.session_state.mt5_server = "MetaQuotes-Demo"
 if "mt5_symbol" not in st.session_state:
     st.session_state.mt5_symbol = "XAUUSD"
+if "chart_zoom_candles" not in st.session_state:
+    st.session_state.chart_zoom_candles = 38
 
 # -----------------------------------------------------------------------------
 # SIDEBAR: SETTINGS, RISK, & ELLIOTT WAVE CONTROLS
@@ -471,6 +473,18 @@ with st.sidebar:
     st.session_state.show_ewt = show_ewt_val
 
     st.divider()
+    st.markdown("#### 🔍 Chart Zoom & Scaling")
+    zoom_val = st.slider(
+        "Candles Displayed (Zoom)",
+        min_value=25,
+        max_value=60,
+        value=int(st.session_state.chart_zoom_candles),
+        step=5,
+        help="Zoom in (25-30 candles) for bold prominent candles or zoom out (50-60) for macro context"
+    )
+    st.session_state.chart_zoom_candles = zoom_val
+
+    st.divider()
     st.markdown("#### 🛡️ Live Risk Management & Lot Size")
     c_bal = st.number_input("Account Balance ($)", value=st.session_state.account_balance, step=1000.0)
     c_risk = st.slider("Risk Per Trade (%)", 0.5, 3.0, st.session_state.risk_percent, 0.5)
@@ -501,7 +515,7 @@ with st.sidebar:
                 src_key = "MT5" if "MetaTrader 5" in st.session_state.feed_source_choice else ("DERIV" if "Deriv" in st.session_state.feed_source_choice else "SPOT")
                 df_a, p_a, src_a, err_a = fetch_live_gold_candles(
                     granularity=900,
-                    count=40,
+                    count=int(st.session_state.get("chart_zoom_candles", 38)),
                     source=src_key,
                     mt5_login=st.session_state.mt5_login,
                     mt5_password=st.session_state.mt5_password,
@@ -753,7 +767,7 @@ if trigger_live_scan or is_new_chart_upload or has_text_prompt:
             src_key = "MT5" if "MetaTrader 5" in st.session_state.feed_source_choice else ("DERIV" if "Deriv" in st.session_state.feed_source_choice else "SPOT")
             df_live, spot_price, feed_source, feed_err = fetch_live_gold_candles(
                 granularity=900,
-                count=45,
+                count=int(st.session_state.get("chart_zoom_candles", 38)),
                 source=src_key,
                 mt5_login=st.session_state.mt5_login,
                 mt5_password=st.session_state.mt5_password,

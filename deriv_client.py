@@ -747,7 +747,7 @@ def compute_deterministic_market_structure(df, account_balance=10000.0, risk_per
 
 # -----------------------------------------------------------------------------
 # -----------------------------------------------------------------------------
-# 5. CAMERON4X OPENCV STRICT COORDINATE MAPPING CHART ENGINE
+# 5. CAMERON4X OPENCV STRICT COORDINATE MAPPING CHART ENGINE (ANTI-COLLISION PRO)
 # -----------------------------------------------------------------------------
 def render_native_cameron4x_chart(
     df,
@@ -766,18 +766,20 @@ def render_native_cameron4x_chart(
     show_ewt=True
 ):
     """
-    Renders an institutional Cameron4x dark candlestick chart (940x540) on #0B1120.
-    Binds visual coordinates strictly to deterministic price floats via price_to_pixel().
-    Optionally overlays Elliott Wave cycle badges and polyline rails.
-    Hardened against non-integer indices, float coordinate conversions, and missing values.
+    Renders an institutional Cameron4x dark candlestick chart (1180x620) on #0B1120.
+    Features:
+      - Smart price range bounding (prevents distant targets from squashing candles).
+      - Dark backdrop pill badges for zero text collisions / overlaps.
+      - Intelligent staggering of Sweep, MSS, FVG, and 50% CE labels.
+      - Elliott Wave badges vertically offset above/below pivots with stem rails.
     """
-    w, h = 940, 540
+    w, h = 1180, 620
     img = np.zeros((h, w, 3), dtype=np.uint8)
     img[:] = (32, 17, 11)  # Canvas #0B1120 in BGR
 
     if df is None or len(df) < 5:
-        cv2.putText(img, "No Live Candlestick Data Available", (int(w * 0.25), int(h * 0.50)),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2, cv2.LINE_AA)
+        cv2.putText(img, "No Live Candlestick Data Available", (int(w * 0.28), int(h * 0.50)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.85, (255, 255, 255), 2, cv2.LINE_AA)
         return Image.fromarray(img[:, :, ::-1])
 
     try:
@@ -803,7 +805,7 @@ def render_native_cameron4x_chart(
         COLOR_CE     = (6, 182, 212)   # Amber/Cyan #06B6D4
         COLOR_TP     = (153, 211, 52)  # Mint Green #34D399
         COLOR_SPOT   = (36, 191, 251)  # Amber #FBBF24
-        COLOR_GRID   = (45, 30, 20)    # Subdued Grid lines
+        COLOR_GRID   = (42, 28, 18)    # Subdued Grid lines
 
         all_lows = df["Low"].dropna().astype(float).values
         all_highs = df["High"].dropna().astype(float).values
@@ -811,38 +813,56 @@ def render_native_cameron4x_chart(
         if len(all_lows) == 0: all_lows = np.array([last_close - 5.0])
         if len(all_highs) == 0: all_highs = np.array([last_close + 5.0])
 
-        if sweep_p is None: sweep_p = float(np.min(all_lows)) if is_buy else float(np.max(all_highs))
+        c_min = float(np.min(all_lows))
+        c_max = float(np.max(all_highs))
+
+        if sweep_p is None: sweep_p = c_min if is_buy else c_max
         else: sweep_p = float(sweep_p)
 
         if mss_p is None: mss_p = float(np.median(df["Close"].astype(float).values))
         else: mss_p = float(mss_p)
 
-        if fvg_top is None: fvg_top = round(last_close + 3.0, 2)
+        if fvg_top is None: fvg_top = round(last_close + 2.5, 2)
         else: fvg_top = float(fvg_top)
 
-        if fvg_bot is None: fvg_bot = round(last_close - 3.0, 2)
+        if fvg_bot is None: fvg_bot = round(last_close - 2.5, 2)
         else: fvg_bot = float(fvg_bot)
 
         if entry_p is None: entry_p = round((fvg_top + fvg_bot) / 2.0, 2)
         else: entry_p = float(entry_p)
 
-        if sl_p is None: sl_p = round(sweep_p - 3.0 if is_buy else sweep_p + 3.0, 2)
+        if sl_p is None: sl_p = round(sweep_p - 2.5 if is_buy else sweep_p + 2.5, 2)
         else: sl_p = float(sl_p)
 
         if tp_p is None: tp_p = round(entry_p + 2.0 * abs(entry_p - sl_p) if is_buy else entry_p - 2.0 * abs(entry_p - sl_p), 2)
         else: tp_p = float(tp_p)
 
-        raw_points = [
-            float(np.min(all_lows)), float(np.max(all_highs)),
-            entry_p, sl_p, tp_p, sweep_p, mss_p, fvg_top, fvg_bot, last_close
-        ]
-        valid_points = [float(p) for p in raw_points if p is not None and not np.isnan(p)]
-        if not valid_points:
-            valid_points = [last_close - 10.0, last_close + 10.0]
+        # -------------------------------------------------------------
+        # SMART DYNAMIC ZOOM & VERTICAL BOUNDING
+        # Prevents distant TP from squashing candle bodies into thin lines!
+        # -------------------------------------------------------------
+        core_levels = [c_min, c_max, sweep_p, mss_p, entry_p, sl_p, fvg_top, fvg_bot, last_close]
+        min_core = min(core_levels)
+        max_core = max(core_levels)
+        core_rng = max(1.5, max_core - min_core)
 
-        min_p = min(valid_points)
-        max_p = max(valid_points)
-        p_pad = max(2.0, (max_p - min_p) * 0.08)
+        tp_offscreen = False
+        if is_buy:
+            if tp_p > max_core + core_rng * 0.35:
+                tp_offscreen = True
+                max_p = max_core + core_rng * 0.20
+            else:
+                max_p = max(max_core, tp_p)
+            min_p = min_core - core_rng * 0.10
+        else:
+            if tp_p < min_core - core_rng * 0.35:
+                tp_offscreen = True
+                min_p = min_core - core_rng * 0.20
+            else:
+                min_p = min(min_core, tp_p)
+            max_p = max_core + core_rng * 0.10
+
+        p_pad = max(1.5, (max_p - min_p) * 0.05)
         min_p -= p_pad
         max_p += p_pad
         p_range = max(1.0, max_p - min_p)
@@ -852,20 +872,29 @@ def render_native_cameron4x_chart(
                 p_val = float(p) if (p is not None and not np.isnan(p)) else last_close
             except Exception:
                 p_val = last_close
-            px_val = h * 0.12 + (max_p - p_val) / p_range * (h * 0.72)
-            return int(np.clip(px_val, 10, h - 20))
+            px_val = h * 0.11 + (max_p - p_val) / p_range * (h * 0.76)
+            return int(np.clip(px_val, 12, h - 25))
+
+        def draw_badge(canvas, text, bx, by, text_color, bg_color=(15, 23, 42), border_color=None, font_scale=0.38):
+            """Draws a clean institutional text badge with a dark solid backdrop to prevent text collisions."""
+            (t_w, t_h), baseline = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, 1)
+            x1, y1 = int(bx - 5), int(by - t_h - 4)
+            x2, y2 = int(bx + t_w + 5), int(by + baseline + 2)
+            cv2.rectangle(canvas, (x1, y1), (x2, y2), bg_color, -1)
+            if border_color:
+                cv2.rectangle(canvas, (x1, y1), (x2, y2), border_color, 1)
+            cv2.putText(canvas, text, (int(bx), int(by)), cv2.FONT_HERSHEY_SIMPLEX, font_scale, text_color, 1, cv2.LINE_AA)
 
         # 1. Price Grid & Axis Labels
         for p_level in np.linspace(min_p, max_p, 8):
             y_l = price_to_pixel(p_level)
-            cv2.line(img, (int(w * 0.05), y_l), (int(w * 0.86), y_l), COLOR_GRID, 1)
-            cv2.putText(img, f"${p_level:.1f}", (int(w * 0.87), int(y_l + 4)),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.38, (148, 163, 184), 1, cv2.LINE_AA)
+            cv2.line(img, (int(w * 0.05), y_l), (int(w * 0.88), y_l), COLOR_GRID, 1)
+            draw_badge(img, f"${p_level:.1f}", int(w * 0.89), int(y_l + 4), (148, 163, 184), bg_color=(20, 14, 10))
 
-        # 2. Render Candlesticks (using range(n_c) to guarantee int positional indexing)
+        # 2. Render Candlesticks (Prominent Zoom & Adaptive Width)
         n_c = len(df)
-        chart_w = int(w * 0.79)
-        c_w = max(4, int(chart_w / n_c) - 2)
+        chart_w = int(w * 0.81)
+        c_w = max(6, int(chart_w / n_c) - 3)
         start_x = int(w * 0.06)
 
         for i in range(n_c):
@@ -895,8 +924,8 @@ def render_native_cameron4x_chart(
                 bot_b = top_b + 2
             cv2.rectangle(img, (int(x_mid - c_w // 2), top_b), (int(x_mid + c_w // 2), bot_b), c_col, -1)
 
-            # Safe time label formatting
-            if i % 7 == 0:
+            # Time labels on bottom axis
+            if i % max(1, n_c // 7) == 0:
                 t_str = ""
                 if "Date_NY" in row:
                     val = row["Date_NY"]
@@ -908,59 +937,78 @@ def render_native_cameron4x_chart(
                     t_str = df.index[i].strftime("%H:%M")
 
                 if t_str:
-                    cv2.putText(img, t_str, (int(x_mid - 16), int(h * 0.90)),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.34, (148, 163, 184), 1, cv2.LINE_AA)
+                    draw_badge(img, t_str, int(x_mid - 16), int(h * 0.93), (148, 163, 184), bg_color=(20, 14, 10), font_scale=0.34)
 
         overlay = img.copy()
 
-        # 3. Sweep Line
+        # 3. Liquidity Sweep Line & Staggered Label
         sw_y = price_to_pixel(sweep_p)
         sw_lbl = f"⚡ #13 SSL Swept (${sweep_p:.1f})" if is_buy else f"⚡ #13 BSL Swept (${sweep_p:.1f})"
-        cv2.line(img, (int(w * 0.08), sw_y), (int(w * 0.85), sw_y), COLOR_SWEEP, 2, cv2.LINE_AA)
-        cv2.putText(img, sw_lbl, (int(w * 0.10), int(sw_y + 16 if is_buy else sw_y - 8)),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.42, COLOR_SWEEP, 1, cv2.LINE_AA)
+        cv2.line(img, (int(w * 0.06), sw_y), (int(w * 0.88), sw_y), COLOR_SWEEP, 2, cv2.LINE_AA)
+        
+        sw_y_text = sw_y - 10 if is_buy else sw_y + 16
+        draw_badge(img, sw_lbl, int(w * 0.08), sw_y_text, COLOR_SWEEP, border_color=(56, 189, 248), font_scale=0.40)
 
-        # 4. MSS Dashed Line
+        # 4. MSS Dashed Line & Collision-Aware Offset
         mss_y = price_to_pixel(mss_p)
-        for x in range(int(w * 0.20), int(w * 0.85), 14):
+        for x in range(int(w * 0.16), int(w * 0.88), 14):
             cv2.line(img, (int(x), mss_y), (int(x + 8), mss_y), COLOR_MSS, 2, cv2.LINE_AA)
-        cv2.putText(img, f"⚡ #4 MSS Pivot (${mss_p:.1f})", (int(w * 0.22), int(mss_y - 6)),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.42, COLOR_MSS, 1, cv2.LINE_AA)
 
-        # 5. FVG Shaded Box & 50% CE Midline
+        # Stagger MSS label horizontally if vertical proximity to Sweep is under 26px
+        if abs(mss_y - sw_y) < 28:
+            mss_x_pos = int(w * 0.42)
+            mss_y_text = mss_y + 18 if sw_y < mss_y else mss_y - 10
+        else:
+            mss_x_pos = int(w * 0.20)
+            mss_y_text = mss_y - 8
+
+        draw_badge(img, f"⚡ #4 MSS Pivot (${mss_p:.1f})", mss_x_pos, mss_y_text, COLOR_MSS, border_color=(203, 213, 225), font_scale=0.40)
+
+        # 5. FVG Shaded Box & Staggered 50% CE Midline
         fvg_col = COLOR_BULL if is_buy else COLOR_BEAR
-        fvg_lbl = f"🟩 #17 Bull FVG (BISI) [${fvg_bot:.1f}-${fvg_top:.1f}]" if is_buy else f"🟥 #17 Bear FVG (SIBI) [${fvg_bot:.1f}-${fvg_top:.1f}]"
+        fvg_lbl = f"🟩 #17 Bull FVG [${fvg_bot:.1f}-${fvg_top:.1f}]" if is_buy else f"🟥 #17 Bear FVG [${fvg_bot:.1f}-${fvg_top:.1f}]"
         
         fvg_y1 = price_to_pixel(fvg_top)
         fvg_y2 = price_to_pixel(fvg_bot)
-        fvg_x1 = int(w * 0.38)
-        fvg_x2 = int(w * 0.85)
+        fvg_x1 = int(w * 0.32)
+        fvg_x2 = int(w * 0.88)
 
+        # Box
         cv2.rectangle(overlay, (fvg_x1, int(min(fvg_y1, fvg_y2))), (fvg_x2, int(max(fvg_y1, fvg_y2))), fvg_col, -1)
         cv2.rectangle(img, (fvg_x1, int(min(fvg_y1, fvg_y2))), (fvg_x2, int(max(fvg_y1, fvg_y2))), fvg_col, 2)
         
+        # 50% CE Midline
         ce_y = price_to_pixel(entry_p)
         for x in range(fvg_x1, fvg_x2, 8):
             cv2.line(img, (int(x), ce_y), (int(x + 5), ce_y), COLOR_CE, 2, cv2.LINE_AA)
-        cv2.putText(img, fvg_lbl, (int(fvg_x1 + 6), int(min(fvg_y1, fvg_y2) - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (255, 255, 255), 1, cv2.LINE_AA)
-        cv2.putText(img, f"🔹 #28 50% CE Entry (${entry_p:.2f})", (int(fvg_x1 + 6), int(ce_y - 4)), cv2.FONT_HERSHEY_SIMPLEX, 0.42, COLOR_CE, 1, cv2.LINE_AA)
 
-        # 6. Target 1:2 R:R Rail
-        tp_y = price_to_pixel(tp_p)
-        for x in range(int(w * 0.30), int(w * 0.85), 14):
-            cv2.line(img, (int(x), tp_y), (int(x + 8), tp_y), COLOR_TP, 2, cv2.LINE_AA)
-        cv2.putText(img, f"🎯 #94 Institutional Target 1:2 R:R (${tp_p:.2f})", (int(w * 0.32), int(tp_y - 6 if is_buy else tp_y + 16)),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.44, COLOR_TP, 1, cv2.LINE_AA)
+        # Anti-collision: FVG Title on the LEFT/TOP, 50% CE Entry on the RIGHT
+        draw_badge(img, fvg_lbl, int(fvg_x1 + 6), int(min(fvg_y1, fvg_y2) - 10), (255, 255, 255), border_color=fvg_col, font_scale=0.38)
+        draw_badge(img, f"🔹 #28 50% CE Entry (${entry_p:.2f})", int(fvg_x1 + 220), int(ce_y - 6), COLOR_CE, border_color=(6, 182, 212), font_scale=0.40)
+
+        # 6. Target 1:2 R:R Rail (On-Screen or Smart Off-Screen Directional Rail)
+        if not tp_offscreen:
+            tp_y = price_to_pixel(tp_p)
+            for x in range(int(w * 0.25), int(w * 0.88), 14):
+                cv2.line(img, (int(x), tp_y), (int(x + 8), tp_y), COLOR_TP, 2, cv2.LINE_AA)
+            draw_badge(img, f"🎯 #94 Target 1:2 R:R (${tp_p:.2f})", int(w * 0.30), int(tp_y - 8 if is_buy else tp_y + 16), COLOR_TP, border_color=(52, 211, 153), font_scale=0.42)
+        else:
+            # Render smart off-screen indicator badge at canvas boundary
+            off_y = int(h * 0.87) if not is_buy else int(h * 0.16)
+            pts_away = abs(last_close - tp_p)
+            dir_sym = "▼" if not is_buy else "▲"
+            draw_badge(img, f"🎯 Target 1:2 R:R: ${tp_p:.2f} {dir_sym} (Extended target: {pts_away:.1f} pts away)", int(w * 0.32), off_y, COLOR_TP, border_color=(52, 211, 153), font_scale=0.42)
 
         # 7. Live Spot Price Dotted Line & Right-Scale Badge
         cur_y = price_to_pixel(last_close)
-        for x in range(int(w * 0.06), int(w * 0.86), 6):
+        for x in range(int(w * 0.06), int(w * 0.88), 6):
             cv2.line(img, (int(x), cur_y), (int(x + 3), cur_y), COLOR_SPOT, 1, cv2.LINE_AA)
-        cv2.rectangle(img, (int(w * 0.86), int(cur_y - 10)), (int(w - 6), int(cur_y + 10)), (15, 23, 42), -1)
-        cv2.rectangle(img, (int(w * 0.86), int(cur_y - 10)), (int(w - 6), int(cur_y + 10)), COLOR_SPOT, 1)
-        cv2.putText(img, f"${last_close:.2f}", (int(w * 0.865), int(cur_y + 4)), cv2.FONT_HERSHEY_SIMPLEX, 0.36, COLOR_SPOT, 1, cv2.LINE_AA)
+        
+        cv2.rectangle(img, (int(w * 0.88), int(cur_y - 11)), (w - 6, int(cur_y + 11)), (15, 23, 42), -1)
+        cv2.rectangle(img, (int(w * 0.88), int(cur_y - 11)), (w - 6, int(cur_y + 11)), COLOR_SPOT, 1)
+        cv2.putText(img, f"${last_close:.2f}", (int(w * 0.885), int(cur_y + 4)), cv2.FONT_HERSHEY_SIMPLEX, 0.38, COLOR_SPOT, 1, cv2.LINE_AA)
 
-        # 8. ELLIOTT WAVE (EWT) OVERLAY
+        # 8. ELLIOTT WAVE (EWT) OVERLAY (Smart Vertical Offset & Floating Badges)
         if bool(show_ewt) and math_structure is not None:
             ewt = math_structure.get("elliott_wave", {})
             if isinstance(ewt, dict):
@@ -981,21 +1029,30 @@ def render_native_cameron4x_chart(
                         except Exception:
                             continue
 
-                    # Draw circular badges over wave pivots
-                    for p_pt in wave_pts:
+                    # Draw floating circular badges with vertical stems
+                    for idx_w, p_pt in enumerate(wave_pts):
                         try:
                             pt_idx = int(p_pt.get("idx", 0))
                             px = int(start_x + pt_idx * (c_w + 3))
-                            py = int(price_to_pixel(p_pt.get("price", last_close)))
+                            py_pivot = int(price_to_pixel(p_pt.get("price", last_close)))
                             lbl = str(p_pt.get("label", ""))
+
+                            # Offset high vs low pivots cleanly above/below the candle
+                            is_high_pivot = (idx_w % 2 == 1) if is_buy else (idx_w % 2 == 0)
+                            badge_y = py_pivot - 20 if is_high_pivot else py_pivot + 20
+                            stem_end_y = py_pivot - 10 if is_high_pivot else py_pivot + 10
+
+                            # Thin leader stem
+                            cv2.line(img, (px, py_pivot), (px, stem_end_y), (148, 163, 184), 1, cv2.LINE_AA)
+
                             b_col = (56, 189, 248) if lbl not in ["(3)", "(5)"] else (36, 191, 251)
-                            cv2.circle(img, (px, py), 11, (15, 23, 42), -1)
-                            cv2.circle(img, (px, py), 11, b_col, 1, cv2.LINE_AA)
-                            cv2.putText(img, lbl, (int(px - 8), int(py + 4)), cv2.FONT_HERSHEY_SIMPLEX, 0.30, (255, 255, 255), 1, cv2.LINE_AA)
+                            cv2.circle(img, (px, badge_y), 11, (15, 23, 42), -1)
+                            cv2.circle(img, (px, badge_y), 11, b_col, 1, cv2.LINE_AA)
+                            cv2.putText(img, lbl, (int(px - 7), int(badge_y + 4)), cv2.FONT_HERSHEY_SIMPLEX, 0.32, (255, 255, 255), 1, cv2.LINE_AA)
                         except Exception:
                             continue
 
-        cv2.addWeighted(overlay, 0.28, img, 0.72, 0, img)
+        cv2.addWeighted(overlay, 0.26, img, 0.74, 0, img)
 
         # 9. Top Institutional Watermark Header
         banner_h = 36
@@ -1006,7 +1063,7 @@ def render_native_cameron4x_chart(
             ewt_phase = math_structure.get("elliott_wave", {}).get("cycle_phase", "")
             if ewt_phase:
                 ewt_info = f" | EWT: {str(ewt_phase)[:18]}"
-        status_text = f"DERIV SPOT 15m | {verdict} | Spot: ${last_close:.2f} | Score: {score}%{ewt_info}"
+        status_text = f"XAUUSD 15m ({session_txt[:16]}) | {verdict} | Spot: ${last_close:.2f} | Score: {score}%{ewt_info}"
         cv2.putText(img, status_text, (14, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.44, (251, 191, 36), 1, cv2.LINE_AA)
 
         return Image.fromarray(img[:, :, ::-1])
