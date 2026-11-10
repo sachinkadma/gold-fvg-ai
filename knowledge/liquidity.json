@@ -1,0 +1,115 @@
+{
+  "category": "liquidity",
+  "description": "ICT Liquidity concepts covering external range liquidity, sweeps, turtle soups, purges, and retail inducement traps.",
+  "topics": [
+    {
+      "id": 8,
+      "name": "Internal vs External Range Liquidity",
+      "killzones": ["London", "NY_AM", "Silver_Bullet", "NY_PM"],
+      "deterministic_criteria": {
+        "external_liquidity": "Major fractal swing highs and lows (BSL/SSL)",
+        "internal_liquidity": "Fair Value Gaps (FVG) and Order Blocks within the current dealing range",
+        "orderflow_cycle": "External -> Internal -> External"
+      },
+      "rules": [
+        "Price expands from Internal Range Liquidity (FVGs) to purge External Range Liquidity (Old Highs/Lows).",
+        "Once External Liquidity is swept, smart money seeks rebalancing towards unmitigated internal PD arrays."
+      ]
+    },
+    {
+      "id": 9,
+      "name": "Buy-Side Liquidity (BSL)",
+      "killzones": ["London", "NY_AM", "Silver_Bullet", "NY_PM"],
+      "deterministic_criteria": {
+        "level_type": "Swing High or Equal Highs (EQH)",
+        "trigger": "Price trades above prior swing high",
+        "target_pool": "Retail buy stops and short seller stop losses"
+      },
+      "rules": [
+        "BSL rests above previous day highs (PDH), session highs, and clean swing highs.",
+        "Smart money drives price above BSL to pair institutional sell orders with triggered retail buy stops."
+      ]
+    },
+    {
+      "id": 10,
+      "name": "Sell-Side Liquidity (SSL)",
+      "killzones": ["London", "NY_AM", "Silver_Bullet", "NY_PM"],
+      "deterministic_criteria": {
+        "level_type": "Swing Low or Equal Lows (EQL)",
+        "trigger": "Price trades below prior swing low",
+        "target_pool": "Retail sell stops and long buyer stop losses"
+      },
+      "rules": [
+        "SSL rests below previous day lows (PDL), session lows, and clean swing lows.",
+        "Smart money drives price below SSL to pair institutional buy orders with triggered retail panic selling."
+      ]
+    },
+    {
+      "id": 11,
+      "name": "Equal Highs & Equal Lows (EQH / EQL)",
+      "killzones": ["London", "NY_AM", "Silver_Bullet"],
+      "deterministic_criteria": {
+        "delta_tolerance_pips": 2.0,
+        "classification": "Engineered Retail Liquidity Trap"
+      },
+      "rules": [
+        "Double or triple tops/bottoms within 2 pips are liquidity magnets.",
+        "Never trade an EQH/EQL as genuine resistance/support; expect an institutional sweep."
+      ]
+    },
+    {
+      "id": 13,
+      "name": "Liquidity Sweep / Turtle Soup",
+      "killzones": ["London", "NY_AM", "Silver_Bullet"],
+      "deterministic_criteria": {
+        "bullish_ssl_sweep": "Low < Prior Swing Low AND Close >= Prior Swing Low",
+        "bearish_bsl_sweep": "High > Prior Swing High AND Close <= Prior Swing High",
+        "breakout_expansion_filter": "If candle body Close breaks beyond swing point by > 0.3 * range, classify as BOS/Expansion, NOT sweep",
+        "wick_rejection_minimum_ratio": 0.25
+      },
+      "rules": [
+        "True sweep must leave a rejection wick piercing the level with candle body closing back inside the range.",
+        "If the candle body closes decisively outside the swing point, the setup is an expansion/breakout and sweep thesis is invalidated."
+      ]
+    },
+    {
+      "id": 14,
+      "name": "Inducement",
+      "killzones": ["London", "NY_AM", "Silver_Bullet", "NY_PM"],
+      "deterministic_criteria": {
+        "location": "Minor internal swing high/low formed immediately prior to an unmitigated FVG or OB",
+        "filter": "Reject sweeps of minor internal swings; must target major external swing fractals"
+      },
+      "rules": [
+        "Internal range swing points often serve as bait (inducement) for retail early entries.",
+        "Institutional setups require purge of inducement into a major HTF key level or FVG."
+      ]
+    },
+    {
+      "id": 42,
+      "name": "Judas Swing",
+      "killzones": ["London", "NY_AM"],
+      "deterministic_criteria": {
+        "timing_window_london": "02:00 - 03:30 EST",
+        "timing_window_ny_am": "08:30 - 09:30 EST",
+        "direction": "Opposite to daily HTF institutional bias"
+      },
+      "rules": [
+        "False morning breakout designed to run retail stop losses before real institutional expansion.",
+        "London Judas sweep of Asian High/Low frequently sets the High/Low of the Day (HOD/LOD)."
+      ]
+    },
+    {
+      "id": 82,
+      "name": "Draw on Liquidity (DOL)",
+      "killzones": ["London", "NY_AM", "Silver_Bullet", "NY_PM"],
+      "deterministic_criteria": {
+        "magnetic_targets": ["Opposing major swing high/low", "Unmitigated FVG", "Equal Highs/Lows pool"]
+      },
+      "rules": [
+        "Price delivery algorithms seek liquidity pools in a continuous cycle.",
+        "Always identify the dominant Draw on Liquidity before taking an execution."
+      ]
+    }
+  ]
+}

@@ -1,0 +1,76 @@
+{
+  "category": "risk",
+  "description": "ICT Risk Management and Execution Discipline rules enforcing capital preservation, position sizing, invalidation logic, and strict 1:2.0 minimum Risk-to-Reward ratio.",
+  "topics": [
+    {
+      "id": 93,
+      "name": "Risk Percentage Capital Allocation",
+      "killzones": ["London", "NY_AM", "Silver_Bullet", "NY_PM"],
+      "deterministic_criteria": {
+        "maximum_risk_percent": 2.0,
+        "default_risk_percent": 1.0,
+        "risk_capital_formula": "Account_Balance * (Risk_Percent / 100.0)"
+      },
+      "rules": [
+        "Never risk more than 1.0% to 2.0% of total account capital on a single setup.",
+        "Preserve capital above all; losing streaks must never exceed manageable drawdowns."
+      ]
+    },
+    {
+      "id": 94,
+      "name": "Risk-to-Reward Ratio (1:2.0 Minimum)",
+      "killzones": ["London", "NY_AM", "Silver_Bullet", "NY_PM"],
+      "deterministic_criteria": {
+        "minimum_rr": 2.0,
+        "formula": "abs(TP1 - Entry_CE) / abs(Entry_CE - Stop_Loss)",
+        "hard_gate": "If RR < 2.0, setup is strictly REJECTED (action = WAIT)"
+      },
+      "rules": [
+        "Every institutional execution must offer at least 1:2.0 Risk-to-Reward ratio to TP1.",
+        "Setups offering 1:1 or less are statistically negative expectancy over large sample sizes."
+      ]
+    },
+    {
+      "id": 95,
+      "name": "Deterministic Lot Sizing for Gold (XAU/USD)",
+      "killzones": ["London", "NY_AM", "Silver_Bullet", "NY_PM"],
+      "deterministic_criteria": {
+        "gold_pip_multiplier": 10.0,
+        "minimum_sl_pips": 5.0,
+        "formula": "round(Risk_Capital / (max(5.0, abs(Entry - SL) * 10.0) * 10.0), 2)"
+      },
+      "rules": [
+        "Lot size is dynamically derived from dollar risk capital and exact distance to the invalidation stop loss.",
+        "Never use arbitrary fixed lot sizes; size is mathematically calibrated for every trade."
+      ]
+    },
+    {
+      "id": 98,
+      "name": "Stop Loss Placement & Structural Invalidation",
+      "killzones": ["London", "NY_AM", "Silver_Bullet", "NY_PM"],
+      "deterministic_criteria": {
+        "bullish_sl": "Placed 1-2 points below the extreme of the swept swing low",
+        "bearish_sl": "Placed 1-2 points above the extreme of the swept swing high",
+        "invalidation_thesis": "A candle body close beyond the SL level completely invalidates the smart money order flow thesis"
+      },
+      "rules": [
+        "Stop loss is anchored to structural invalidation, not emotional pain thresholds.",
+        "If price trades beyond the sweep extreme, the institutional premise is null and void."
+      ]
+    },
+    {
+      "id": 96,
+      "name": "Partial Take Profit & Trade Management",
+      "killzones": ["London", "NY_AM", "Silver_Bullet", "NY_PM"],
+      "deterministic_criteria": {
+        "tp1_ratio": "2.0 R:R (Close 60-70% of position)",
+        "tp2_runner": "Next opposing major liquidity pool (Run 30-40% risk-free)",
+        "breakeven_rule": "Move SL to Entry (Break-Even) once TP1 is hit"
+      },
+      "rules": [
+        "Bank substantial profits at 1:2.0 R:R (TP1) to secure a guaranteed winning day.",
+        "Trail a runner position toward external range liquidity pools with stop moved to Break-Even."
+      ]
+    }
+  ]
+}

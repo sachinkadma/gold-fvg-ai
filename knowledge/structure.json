@@ -1,0 +1,118 @@
+{
+  "category": "structure",
+  "description": "ICT Market Structure concepts covering fractal swing points, Break of Structure (BOS), Market Structure Shift (MSS), Displacement, Order Blocks, and Candle Range Theory.",
+  "topics": [
+    {
+      "id": 1,
+      "name": "Market Structure (Trend & Sequence)",
+      "killzones": ["London", "NY_AM", "Silver_Bullet", "NY_PM"],
+      "deterministic_criteria": {
+        "bullish_sequence": "Consecutive Higher Highs (HH) and defended Higher Lows (HL)",
+        "bearish_sequence": "Consecutive Lower Lows (LL) and defended Lower Highs (LH)"
+      },
+      "rules": [
+        "In a bullish market, swing lows are defended by smart money while swing highs are liquidated.",
+        "In a bearish market, swing highs are defended by smart money while swing lows are liquidated."
+      ]
+    },
+    {
+      "id": 2,
+      "name": "Fractal Swing Points (STH / ITH / LTH)",
+      "killzones": ["London", "NY_AM", "Silver_Bullet", "NY_PM"],
+      "deterministic_criteria": {
+        "window_size": 5,
+        "swing_high": "High[i] > High[i-1] AND High[i] > High[i-2] AND High[i] > High[i+1] AND High[i] > High[i+2]",
+        "swing_low": "Low[i] < Low[i-1] AND Low[i] < Low[i-2] AND Low[i] < Low[i+1] AND Low[i] < Low[i+2]"
+      },
+      "rules": [
+        "A 5-candle fractal defines an institutional swing pivot.",
+        "Intermediate-Term High (ITH) forms when a swing high has lower swing highs on both its left and right."
+      ]
+    },
+    {
+      "id": 3,
+      "name": "Break of Structure (BOS)",
+      "killzones": ["London", "NY_AM", "Silver_Bullet", "NY_PM"],
+      "deterministic_criteria": {
+        "confirmation": "Candle body Close strictly beyond prior swing high (Bullish) or prior swing low (Bearish)",
+        "classification": "Trend Continuation"
+      },
+      "rules": [
+        "BOS confirms continuation of the prevailing trend.",
+        "Must be confirmed by a full candle body close; wicks alone do not confirm a BOS."
+      ]
+    },
+    {
+      "id": 4,
+      "name": "Market Structure Shift (MSS / CHoCH)",
+      "killzones": ["London", "NY_AM", "Silver_Bullet"],
+      "deterministic_criteria": {
+        "prerequisite": "Preceded by a confirmed Liquidity Sweep (BSL or SSL)",
+        "bullish_mss": "Candle Close > Intermediate Swing High with displacement",
+        "bearish_mss": "Candle Close < Intermediate Swing Low with displacement",
+        "displacement_body_ratio": ">= 0.70 of total candle range",
+        "classification": "Trend Reversal Confirmation"
+      },
+      "rules": [
+        "MSS signals smart money reversal after external liquidity has been raided.",
+        "Wick breaks do NOT count as MSS. A decisive candle body close with energetic displacement is mandatory.",
+        "Must leave behind an unmitigated 3-candle Fair Value Gap (FVG)."
+      ]
+    },
+    {
+      "id": 5,
+      "name": "Premium vs Discount & Equilibrium",
+      "killzones": ["London", "NY_AM", "Silver_Bullet", "NY_PM"],
+      "deterministic_criteria": {
+        "equilibrium": "(Dealing Range High + Dealing Range Low) / 2.0",
+        "premium_zone": "Price > Equilibrium (Only Sells Valid)",
+        "discount_zone": "Price < Equilibrium (Only Buys Valid)"
+      },
+      "rules": [
+        "Never buy in Premium; never sell in Discount.",
+        "Institutional buys must originate from Discount (< 50% Equilibrium); institutional sells from Premium (> 50%)."
+      ]
+    },
+    {
+      "id": 15,
+      "name": "Bullish Order Block (+OB)",
+      "killzones": ["London", "NY_AM", "Silver_Bullet"],
+      "deterministic_criteria": {
+        "formation": "Last down-close (bearish) candle prior to violent upward displacement breaking structure (MSS)",
+        "mean_threshold": "(OB High + OB Low) / 2.0",
+        "invalidation": "Candle body close below Mean Threshold (50%)"
+      },
+      "rules": [
+        "Bullish OB represents institutional accumulation footprint.",
+        "Mean threshold (50% midpoint of the OB candle) must be defended on retracement."
+      ]
+    },
+    {
+      "id": 16,
+      "name": "Bearish Order Block (-OB)",
+      "killzones": ["London", "NY_AM", "Silver_Bullet"],
+      "deterministic_criteria": {
+        "formation": "Last up-close (bullish) candle prior to violent downward displacement breaking structure (MSS)",
+        "mean_threshold": "(OB High + OB Low) / 2.0",
+        "invalidation": "Candle body close above Mean Threshold (50%)"
+      },
+      "rules": [
+        "Bearish OB represents institutional distribution footprint.",
+        "Mean threshold (50% midpoint of the OB candle) must be defended on retracement."
+      ]
+    },
+    {
+      "id": 21,
+      "name": "Breaker Block (BB)",
+      "killzones": ["London", "NY_AM", "Silver_Bullet"],
+      "deterministic_criteria": {
+        "formation": "Failed Order Block that was responsible for sweeping liquidity prior to MSS",
+        "role": "Support-Resistance flip level"
+      },
+      "rules": [
+        "A Bullish Breaker is the highest up-close candle prior to a swing low that swept liquidity and reversed into an MSS.",
+        "Provides high-probability retest entry when paired with an overlapping FVG (Unicorn Model)."
+      ]
+    }
+  ]
+}

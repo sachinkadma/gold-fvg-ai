@@ -1,0 +1,98 @@
+{
+  "category": "entry_models",
+  "description": "ICT High-probability Execution Models including 3-Candle FVG, 50% Consequent Encroachment, Silver Bullet, ICT 2022 Model, and Invalidation Criteria.",
+  "topics": [
+    {
+      "id": 17,
+      "name": "Fair Value Gap (FVG / 3-Candle Imbalance)",
+      "killzones": ["London", "NY_AM", "Silver_Bullet", "NY_PM"],
+      "deterministic_criteria": {
+        "bullish_bisi": "Candle 3 Low > Candle 1 High. FVG Top = Candle 3 Low, FVG Bottom = Candle 1 High",
+        "bearish_sibi": "Candle 3 High < Candle 1 Low. FVG Top = Candle 1 Low, FVG Bottom = Candle 3 High",
+        "minimum_gap_size_gold": 0.50,
+        "displacement_candle": "Candle 2 must have body ratio |Close - Open| / (High - Low) >= 0.70"
+      },
+      "rules": [
+        "FVG is a 3-candle imbalance representing single-sided aggressive price delivery.",
+        "Smart money re-delivers price back into the FVG to offer fair value to the opposing side before expanding."
+      ]
+    },
+    {
+      "id": 28,
+      "name": "Consequent Encroachment (50% CE)",
+      "killzones": ["London", "NY_AM", "Silver_Bullet", "NY_PM"],
+      "deterministic_criteria": {
+        "formula": "(FVG Top + FVG Bottom) / 2.0",
+        "entry_execution": "Limit order placed exactly at 50% CE",
+        "mitigation_threshold": "Subsequent candle low/high touching or crossing 50% CE flags mitigation",
+        "invalidation_warning": "Candle body close beyond 50% CE signals structural weakness"
+      },
+      "rules": [
+        "50% CE is the equilibrium of the imbalance and the optimal institutional entry point.",
+        "Wicks may briefly pierce past 50% CE, but candle bodies should respect and close within the FVG."
+      ]
+    },
+    {
+      "id": 59,
+      "name": "Silver Bullet Model",
+      "killzones": ["Silver_Bullet"],
+      "deterministic_criteria": {
+        "time_windows_est": ["10:00 - 11:00 EST (NY AM)", "14:00 - 15:00 EST (NY PM)"],
+        "setup_sequence": [
+          "1. Liquidity sweep of external swing or session high/low",
+          "2. Violent displacement candle creating clean FVG",
+          "3. Limit entry at FVG 50% CE",
+          "4. Minimum draw on liquidity: 15-20 pips"
+        ]
+      },
+      "rules": [
+        "Silver Bullet executes strictly during algorithmically programmed 60-minute time injections.",
+        "Zero hesitation model: enter at 50% CE of the first valid FVG formed after liquidity raid."
+      ]
+    },
+    {
+      "id": 60,
+      "name": "ICT 2022 Mentorship Model",
+      "killzones": ["London", "NY_AM", "Silver_Bullet"],
+      "deterministic_criteria": {
+        "step_1_htf": "Price reaches key HTF liquidity pool or session extreme",
+        "step_2_sweep": "Deterministic sweep of BSL (for sells) or SSL (for buys)",
+        "step_3_mss": "Displacement candle closes body through structural pivot (MSS)",
+        "step_4_fvg": "3-candle FVG created inside the displacement leg",
+        "step_5_entry": "Limit order set at 50% CE",
+        "step_6_sl": "Stop loss placed behind swing extreme of the sweep",
+        "step_7_tp": "Minimum 1:2.0 Risk-to-Reward ratio to opposing swing pool"
+      },
+      "rules": [
+        "The flagship institutional reversal model.",
+        "Requires confluence of Liquidity Sweep + Displacement MSS + Unmitigated FVG + 1:2.0 R:R."
+      ]
+    },
+    {
+      "id": 61,
+      "name": "Unicorn Model",
+      "killzones": ["London", "NY_AM", "Silver_Bullet"],
+      "deterministic_criteria": {
+        "confluence": "Breaker Block and Fair Value Gap share identical price coordinates",
+        "probability_tier": "A++ Institutional Master Setup"
+      },
+      "rules": [
+        "When a Breaker Block overlaps perfectly inside an FVG, it produces maximum institutional defense.",
+        "Offers the highest statistical win-rate in the entire ICT playbook."
+      ]
+    },
+    {
+      "id": 23,
+      "name": "Inversion FVG (IFVG)",
+      "killzones": ["London", "NY_AM", "Silver_Bullet", "NY_PM"],
+      "deterministic_criteria": {
+        "condition": "Price violates an existing FVG with full candle body close without reversal",
+        "flip": "Former Bullish FVG flips to Bearish Resistance; former Bearish FVG flips to Bullish Support"
+      },
+      "rules": [
+        "A failed FVG becomes an Inversion FVG upon decisive breakout.",
+        "Retest of the inverted FVG provides high-confidence continuation entry."
+      ]
+    }
+  ]
+}

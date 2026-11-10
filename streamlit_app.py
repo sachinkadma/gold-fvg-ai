@@ -4,10 +4,12 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, time
 from PIL import Image
-from ultralytics import YOLO
-from sentence_transformers import SentenceTransformer
-from huggingface_hub import hf_hub_download
-from deriv_client import fetch_live_gold_candles, render_native_cameron4x_chart
+from deriv_client import (
+    fetch_live_gold_candles,
+    compute_deterministic_market_structure,
+    render_native_cameron4x_chart
+)
+from knowledge_store import ICTKnowledgeStore
 
 st.set_page_config(
     page_title="Gold ICT AGI - Institutional Co-Pilot",
@@ -19,24 +21,14 @@ st.set_page_config(
 NY_TZ = zoneinfo.ZoneInfo("America/New_York")
 
 # -----------------------------------------------------------------------------
-# 104-TOPICS SYLLABUS KNOWLEDGE DICTIONARY
+# KNOWLEDGE STORE & TEMPORAL KILLZONE RETRIEVAL
 # -----------------------------------------------------------------------------
-TOPIC_NAMES = {
-    1: "Market Structure", 2: "Swing Points (STH/ITH)", 3: "Break of Structure (BOS)",
-    4: "Market Structure Shift (MSS)", 5: "Premium vs Discount", 6: "Equilibrium (50%)",
-    7: "Dealing Range", 8: "Internal vs External Range Liquidity", 9: "Buy-Side Liquidity (BSL)",
-    10: "Sell-Side Liquidity (SSL)", 11: "Equal Highs (EQH)", 12: "Equal Lows (EQL)",
-    13: "Liquidity Sweep / Turtle Soup", 14: "Inducement", 15: "Bullish Order Block (+OB)",
-    16: "Bearish Order Block (-OB)", 17: "Fair Value Gap (FVG)", 18: "BISI (Buyside Imbalance)",
-    19: "SIBI (Sellside Imbalance)", 20: "Balanced Price Range (BPR)", 21: "Volume Imbalance (VI)",
-    22: "Opening Gap", 23: "Inversion FVG (IFVG)", 24: "Breaker Block (BB)",
-    25: "Mitigation Block", 26: "Rejection Block", 27: "Propulsion Block",
-    28: "Consequent Encroachment (50% CE)", 29: "Fair Value", 30: "Liquidity Void",
-    31: "Mean Threshold (50% MT)", 35: "Asian Killzone", 36: "London Killzone",
-    37: "NY AM Killzone", 38: "NY Lunch", 39: "NY PM Killzone", 40: "Midnight Open",
-    59: "Silver Bullet Model", 60: "ICT 2022 Mentorship Model", 61: "Unicorn Model",
-    93: "Risk Percentage", 94: "Risk-to-Reward Ratio", 98: "Stop Loss Placement"
-}
+@st.cache_resource
+def get_knowledge_store():
+    return ICTKnowledgeStore(knowledge_dir="knowledge")
+
+knowledge_store = get_knowledge_store()
+TOPIC_NAMES = knowledge_store.get_all_topics_summary()
 
 # -----------------------------------------------------------------------------
 # LIVE NY TIME & INTERBANK SESSION DETECTOR
@@ -244,25 +236,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# GLOBAL DATA & MODEL LOADERS
-# -----------------------------------------------------------------------------
-@st.cache_resource
-def load_rag_embedder():
-    embedder = None
-    chunks, chunk_vecs = [], []
-    try:
-        embedder = SentenceTransformer("all-MiniLM-L6-v2")
-        raw = open("notes.txt", encoding="utf-8").read() if os.path.exists("notes.txt") else ""
-        chunks = [c.strip() for c in raw.split("\n\n") if len(c.strip()) > 20]
-        chunk_vecs = embedder.encode(chunks, normalize_embeddings=True) if chunks else []
-    except Exception:
-        pass
-    return embedder, chunks, chunk_vecs
-
-embedder, chunks, chunk_vecs = load_rag_embedder()
-
-# -----------------------------------------------------------------------------
-# DYNAMIC FRONTIER GEMINI REST ENGINE (ZERO 404s)
+# DYNAMIC FRONTIER GEMINI REST ENGINE
 # -----------------------------------------------------------------------------
 def get_available_gemini_models(api_key):
     try:
@@ -490,11 +464,12 @@ with st.sidebar:
                 df_a, p_a, src_a, err_a = fetch_live_gold_candles(granularity=900, count=40)
                 if df_a is not None and not df_a.empty:
                     s_label, _ = get_live_ny_session()
-                    img_a = render_native_cameron4x_chart(df_a, session_txt=s_label)
+                    m_struct = compute_deterministic_market_structure(df_a, account_balance=st.session_state.account_balance, risk_percent=st.session_state.risk_percent)
+                    img_a = render_native_cameron4x_chart(df_a, math_structure=m_struct, session_txt=s_label)
                     a_text = f"""🔔 *DERIV LIVE 15m GOLD (frxXAUUSD) ALERT* 🔔
 ━━━━━━━━━━━━━━━━━━━━
-🎯 *Signal:* Live Spot Candlestick Scan
-📍 *Current Spot Price:* ${p_a:.2f}
+🎯 *Signal:* {m_struct['verdict']} ({m_struct['action']})
+📍 *Spot Price:* ${p_a:.2f}
 🏛️ *Feed Source:* {src_a}
 ⏰ *NY Session:* {s_label}
 ━━━━━━━━━━━━━━━━━━━━"""
@@ -508,9 +483,9 @@ with st.sidebar:
     st.markdown("#### 📚 Search 104 ICT Syllabus Topics")
     search_q = st.text_input("Search Topics", placeholder="e.g. FVG, MSS, Killzone, Turtle Soup")
     if search_q:
-        matched = [(tid, tname) for tid, tname in TOPIC_NAMES.items() if search_q.lower() in tname.lower()]
-        for tid, tname in matched[:6]:
-            st.markdown(f"• **#{tid}** {tname}")
+        matched = knowledge_store.retrieve(search_q, top_k=6)
+        for t in matched:
+            st.markdown(f"• **#{t['id']}** {t['name']}")
 
     st.divider()
     if st.button("🗑️ Clear Chat History", use_container_width=True):
@@ -543,10 +518,10 @@ st.markdown(f"""
 if len(st.session_state.messages) == 0:
     st.markdown("""
     <div class="hero-container">
-        <div class="hero-title">Institutional Gold (XAU/USD) 15m Co-Pilot</div>
+        <div class="hero-title">Deterministic Institutional Gold 15m Co-Pilot</div>
         <div class="hero-subtitle">
-            Direct Deriv WebSocket spot feed (<code>frxXAUUSD</code>) with pure Cameron4x candlestick charts.<br>
-            Click <b>Scan Live 15m Gold</b> below or upload a screenshot. The <b>3-Agent AGI Swarm</b> executes deep institutional consensus, marks candles with exact ICT levels (MSS, Sweeps, FVG, 50% CE), and calculates the trade blueprint with precise lot sizing.
+            All market structure levels (Sweeps, MSS, 3-Candle FVGs, 50% CE, and 1:2.0 RR) are mathematically calculated in deterministic Python before passing to the <b>3-Agent AGI Swarm</b>.<br>
+            Click <b>Scan Live 15m Gold</b> below to run the live Deriv WebSocket audit with Unanimous Consensus Governance.
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -562,20 +537,23 @@ for msg in st.session_state.messages:
             st.markdown(msg["content"])
     else:
         with st.chat_message("assistant"):
-            # 1. Pure Cameron4x Marked Candlestick Chart (Candles Only + Exact Markings)
+            # 1. Pure Cameron4x Marked Candlestick Chart
             if "marked_img" in msg and msg["marked_img"] is not None:
                 st.image(msg["marked_img"], caption="⚡ Cameron4x Institutional Candlestick Chart (MSS + Sweep + FVG + 50% CE)", use_container_width=True)
 
             # 2. Executive Trade Card (Ultra High Contrast)
             if "trade_card" in msg and msg["trade_card"] is not None:
                 tc = msg["trade_card"]
-                border_col = "#10B981" if "BUY" in tc["verdict"] else ("#EF4444" if "SELL" in tc["verdict"] else "#F59E0B")
+                is_exec = tc.get("action") == "EXECUTE_LIMIT"
+                border_col = "#10B981" if (is_exec and "BUY" in tc["verdict"]) else ("#EF4444" if (is_exec and "SELL" in tc["verdict"]) else "#F59E0B")
                 grade = tc.get("setup_grade", "A+ Institutional (High Probability)")
-                rec_lot = tc.get("recommended_lot", 0.20)
-                risk_amt = tc.get("risk_amount", 100.0)
+                rec_lot = tc.get("recommended_lot", 0.0)
+                risk_amt = tc.get("risk_amount", 0.0)
+                action_badge = "🟢 UNANIMOUS CONSENSUS APPROVED (EXECUTE LIMIT)" if is_exec else "⏸️ UNANIMOUS CONSENSUS: WAIT (Criteria Pending)"
 
                 st.markdown(f"""
                 <div class="trade-card" style="border-left: 6px solid {border_col} !important;">
+                    <div style="font-size: 0.85rem; font-weight: 800; margin-bottom: 6px;">{action_badge}</div>
                     <div class="trade-verdict" style="color: {border_col} !important;">
                         🎯 {tc['verdict']} <span class="trade-grade-badge">⭐ {grade}</span>
                     </div>
@@ -584,14 +562,19 @@ for msg in st.session_state.messages:
                         • <span class="trade-lbl">Spot Price (frxXAUUSD):</span> <b class="trade-val-price">${tc.get('chart_price', 0):.2f}</b><br>
                         • <span class="trade-lbl">Entry (50% CE / Key Level):</span> <b class="trade-val-cyan">${tc['entry_p']:.2f}</b><br>
                         • <span class="trade-lbl">Invalidation Stop Loss:</span> <b class="trade-val-red">${tc['sl_p']:.2f}</b><br>
-                        • <span class="trade-lbl">Institutional TP1 (1:2 R:R):</span> <b class="trade-val-green">${tc['tp_p']:.2f}</b> &nbsp;|&nbsp; <span class="trade-lbl">Runner TP2:</span> <b style="color: #38BDF8 !important;">${tc.get('tp2_runner', tc['tp_p'] + 10.0):.2f}</b><br>
-                        • <span class="trade-lbl">Recommended Lot Size:</span> <b style="color: #FBBF24 !important; font-size: 1.05rem;">{rec_lot} Lots</b> <span style="color: #94A3B8;">(Risking ${risk_amt:.2f} / {st.session_state.risk_percent}%)</span><br>
-                        • <span class="trade-lbl">Neural Confluence:</span> <b class="trade-val-yellow">{tc['confluence_score']}%</b> &nbsp;|&nbsp; <span class="trade-lbl">Dealing Range:</span> <b style="color: #FFFFFF !important;">{tc['range_zone']}</b><br>
+                        • <span class="trade-lbl">Institutional TP1 (1:2.0 R:R):</span> <b class="trade-val-green">${tc['tp_p']:.2f}</b> &nbsp;|&nbsp; <span class="trade-lbl">Runner TP2:</span> <b style="color: #38BDF8 !important;">${tc.get('tp2_runner', tc['tp_p']):.2f}</b><br>
+                        • <span class="trade-lbl">Calculated Risk:Reward:</span> <b class="trade-val-yellow">{tc.get('rr_ratio', 2.0):.2f} R:R</b> &nbsp;|&nbsp; <span class="trade-lbl">Recommended Lot:</span> <b style="color: #FBBF24 !important;">{rec_lot} Lots</b> (${risk_amt:.2f})<br>
+                        • <span class="trade-lbl">Dealing Range:</span> <b style="color: #FFFFFF !important;">{tc['range_zone']}</b> &nbsp;|&nbsp; <span class="trade-lbl">Confluence Score:</span> <b class="trade-val-yellow">{tc['confluence_score']}%</b><br>
                         • <span class="trade-lbl">🪤 Trapped Liquidity:</span> <b style="color: #F87171 !important;">{tc.get('trapped_liquidity', 'Retail breakout participants trapped')}</b><br>
                         • <span class="trade-lbl">🛑 Invalidation Rule:</span> <b style="color: #FBBF24 !important;">{tc.get('invalidation_thesis', 'Candle close beyond SL level')}</b>
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
+
+                # Rejection criteria box if waiting
+                if not is_exec and tc.get("rejection_reasons"):
+                    reasons_html = "".join([f"<li>{r}</li>" for r in tc["rejection_reasons"]])
+                    st.warning(f"**Missing Institutional Criteria for Execution:**\n<ul>{reasons_html}</ul>", icon="⚠️")
 
                 # 3. 104-Topics Applied
                 if "matched_topics" in msg and msg["matched_topics"]:
@@ -601,10 +584,10 @@ for msg in st.session_state.messages:
             # 4. Multi-Agent Swarm Debate Expander
             if "agent_swarm" in msg and msg["agent_swarm"]:
                 aswarm = msg["agent_swarm"]
-                with st.expander("🤖 AGI Multi-Agent Swarm Debate & Consensus"):
+                with st.expander("🤖 AGI Multi-Agent Swarm Debate & Unanimous Consensus Protocol"):
                     st.markdown(f"**🕵️ Agent 1 (Liquidity Detective):** {aswarm.get('liquidity_detective', 'Analyzed sweep dynamics.')}")
                     st.markdown(f"**📐 Agent 2 (ICT Structure Auditor):** {aswarm.get('structure_auditor', 'Verified MSS and displacement energy.')}")
-                    st.markdown(f"**⚖️ Agent 3 (Chief Risk Officer):** {aswarm.get('risk_officer', 'Validated 1:2 R:R and risk sizing.')}")
+                    st.markdown(f"**⚖️ Agent 3 (Chief Risk Officer):** {aswarm.get('risk_officer', 'Validated 1:2.0 R:R and risk sizing.')}")
 
             # 5. AI Explanation & Reasoning
             st.markdown(msg["content"])
@@ -621,7 +604,7 @@ for msg in st.session_state.messages:
                         tg_text = f"""🔔 *GOLD (XAU/USD) 15m AGI BLUEPRINT* 🔔
 ━━━━━━━━━━━━━━━━━━━━
 🎯 *Signal:* {tc['verdict']} ({tc.get('setup_grade', 'A+')})
-📋 *Model:* {tc['setup_name']}
+📋 *Action:* {tc.get('action', 'WAIT')}
 📍 *Entry (50% CE):* ${tc['entry_p']:.2f}
 🛑 *Stop Loss:* ${tc['sl_p']:.2f}
 🎯 *TP1 (1:2 R:R):* ${tc['tp_p']:.2f}
@@ -644,7 +627,7 @@ with col_scan:
         "⚡ Scan Live 15m Gold (Deriv Spot)",
         use_container_width=True,
         type="primary",
-        help="Pull live 15m candlesticks from Deriv WebSocket & generate Cameron4x chart"
+        help="Pull live 15m candlesticks from Deriv WebSocket & execute deterministic math engine"
     )
 with col_ref:
     if st.button("🔄 Refresh", use_container_width=True, help="Update live prices and session clock"):
@@ -675,11 +658,11 @@ if trigger_live_scan or is_new_chart_upload or has_text_prompt:
 
     if trigger_live_scan:
         is_live_deriv_mode = True
-        user_text = "⚡ Scan Live 15m Gold (Deriv Spot frxXAUUSD) and generate clean Cameron4x candlestick chart with 3-Agent AGI Swarm consensus."
+        user_text = "⚡ Scan Live 15m Gold (Deriv Spot frxXAUUSD) with Deterministic Algorithmic Math & Unanimous Multi-Agent Consensus."
     elif is_new_chart_upload:
         st.session_state.processed_file_names.add(uploaded_chart.name)
         input_img = Image.open(uploaded_chart)
-        user_text = prompt_input if has_text_prompt else "Execute AGI Multi-Agent Swarm analysis on this Gold 15m chart. Detect MSS, Liquidity Sweeps, FVGs, mark the candles cleanly in Cameron4x ICT style, and provide the complete institutional execution blueprint."
+        user_text = prompt_input if has_text_prompt else "Audit this Gold 15m chart against deterministic ICT market structure and render the Cameron4x candlestick chart."
     else:
         user_text = prompt_input
 
@@ -692,334 +675,165 @@ if trigger_live_scan or is_new_chart_upload or has_text_prompt:
             st.image(input_img, width=280, caption="Uploaded Chart")
         st.markdown(user_text)
 
-    # Process AI Analysis
+    # Process Analysis
     with st.chat_message("assistant"):
-        with st.spinner("🧠 3-Agent AGI Swarm executing institutional consensus across 104-topics..."):
+        with st.spinner("🧠 Executing deterministic vector calculations & 3-Agent Unanimous Consensus Protocol..."):
             marked_chart_pil = None
             trade_card_data = None
             matched_topics = []
             agent_swarm_data = {}
             ai_reply = ""
 
-            # -------------------------------------------------------------
-            # CASE A: LIVE DERIV WEBSOCKET SCAN (1-Click Instant)
-            # -------------------------------------------------------------
-            if is_live_deriv_mode:
-                df_live, spot_price, feed_source, feed_err = fetch_live_gold_candles(granularity=900, count=45)
-                if df_live is not None and not df_live.empty:
-                    st.session_state.last_spot_price = spot_price
-                    st.session_state.last_spot_source = feed_source
-                    
-                    recent_high = float(df_live["High"].max())
-                    recent_low = float(df_live["Low"].min())
-                    last_close = float(df_live.iloc[-1]["Close"])
-                    eq_mid = (recent_high + recent_low) / 2.0
-                    in_discount = last_close < eq_mid
+            # Check Killzone temporal filter
+            is_kz_pass, active_kz, kz_code, kz_desc = knowledge_store.get_killzone_window(datetime.now(NY_TZ))
 
-                    # Baseline ICT logic
-                    if in_discount:
-                        verdict = "BUY_LIMIT"
-                        setup_name = "ICT 2022 Mentorship Buy Model"
-                        setup_grade = "A+ Institutional (High Probability)"
-                        sweep_txt = f"SSL Swept (${recent_low:.1f})"
-                        sweep_p = recent_low
-                        mss_p = round(eq_mid - 2.0, 2)
-                        fvg_top = round(last_close + 2.5, 2)
-                        fvg_bot = round(last_close - 3.5, 2)
-                        entry_p = round((fvg_top + fvg_bot) / 2.0, 2)
-                        sl_p = round(recent_low - 3.0, 2)
-                        tp_p = round(entry_p + (entry_p - sl_p) * 2.0, 2)
-                        tp2_p = round(recent_high, 2)
-                        range_z = "DISCOUNT (Buy Zone)"
-                        trapped_liq = f"Retail breakout sellers trapped below swing low {recent_low:.2f}"
-                        inval_thesis = f"Candle body close below {sl_p:.2f} completely invalidates the bullish order flow"
-                    else:
-                        verdict = "SELL_LIMIT"
-                        setup_name = "ICT 2022 Mentorship Sell Model"
-                        setup_grade = "A+ Institutional (High Probability)"
-                        sweep_txt = f"BSL Swept (${recent_high:.1f})"
-                        sweep_p = recent_high
-                        mss_p = round(eq_mid + 2.0, 2)
-                        fvg_top = round(last_close + 3.5, 2)
-                        fvg_bot = round(last_close - 2.5, 2)
-                        entry_p = round((fvg_top + fvg_bot) / 2.0, 2)
-                        sl_p = round(recent_high + 3.0, 2)
-                        tp_p = round(entry_p - (sl_p - entry_p) * 2.0, 2)
-                        tp2_p = round(recent_low, 2)
-                        range_z = "PREMIUM (Sell Zone)"
-                        trapped_liq = f"Retail breakout buyers trapped above swing high {recent_high:.2f}"
-                        inval_thesis = f"Candle body close above {sl_p:.2f} completely invalidates the bearish order flow"
+            # Fetch Live Candlestick Array
+            df_live, spot_price, feed_source, feed_err = fetch_live_gold_candles(granularity=900, count=45)
+            
+            if df_live is not None and not df_live.empty:
+                st.session_state.last_spot_price = spot_price
+                st.session_state.last_spot_source = feed_source
 
-                    score = 92
-                    topic_ids = [1, 2, 4, 5, 6, 8, 9, 13, 17, 19, 28, 60, 93, 94, 98]
+                # 1. RUN PURE DETERMINISTIC VECTOR CALCULATIONS
+                math_struct = compute_deterministic_market_structure(
+                    df_live,
+                    account_balance=st.session_state.account_balance,
+                    risk_percent=st.session_state.risk_percent
+                )
 
-                    # Frontier Gemini 3-Agent Swarm Prompt
-                    ohlc_summary = df_live.tail(10)[["Date_NY", "Open", "High", "Low", "Close"]].to_dict(orient="records")
-                    swarm_prompt = f"""
-You are an Elite AGI Multi-Agent Quantitative Hedge Fund System for Gold (XAU/USD / frxXAUUSD) 15m trading.
-Live Data Feed: {feed_source}
-Current Spot Price: ${spot_price:.2f}
-Recent 15m OHLC Data:
-{json.dumps([{k: str(v) for k, v in row.items()} for row in ohlc_summary], indent=2)}
+                # Add Killzone gate check
+                if not is_kz_pass:
+                    math_struct["rejection_reasons"].append(f"Temporal Filter: Outside active liquidity window ({kz_code}: {kz_desc})")
+                    math_struct["action"] = "WAIT"
 
-Execute a 3-Agent Autonomous Swarm Debate:
-AGENT 1 (Liquidity Detective): Evaluates BSL/SSL sweeps and retail trapped liquidity.
-AGENT 2 (ICT Structure Auditor): Verifies displacement, Market Structure Shift (#4 MSS), FVG boundaries, and 50% CE (#28 CE).
-AGENT 3 (Chief Risk Officer): Enforces strict 1:2.0 Risk-to-Reward ratio and invalidation stop loss.
+                # 2. MULTI-AGENT SWARM GOVERNANCE PROMPT (STRICT JSON SCHEMA)
+                swarm_governance_prompt = f"""
+You are the Supreme Institutional Governance Protocol for Gold (XAU/USD / frxXAUUSD) 15m trading.
+The algorithmic math engine has computed the deterministic market structure from live OHLC data:
+
+DETERMINISTIC MARKET STRUCTURE:
+{json.dumps(math_struct, indent=2)}
+
+KILLZONE EVALUATION:
+- Status: {kz_code}
+- Active Window: {active_kz}
+- Details: {kz_desc}
+- Pass Flag: {is_kz_pass}
+
+UNANIMOUS CONSENSUS RULES:
+1. Agent 1 (Liquidity Detective): Must confirm sweep depth and reject internal retail inducements.
+2. Agent 2 (Structure Auditor): Must confirm candle body MSS and valid unmitigated FVG.
+3. Agent 3 (Chief Risk Officer): Must verify Risk-to-Reward ratio >= 2.0 and Killzone pass ({kz_code}).
+4. If ANY agent rejects or if Pass Flag is false, action MUST be "WAIT".
 
 Return ONLY a valid JSON object matching this schema:
 {{
-  "verdict": "{verdict}",
-  "setup_grade": "A+ Institutional (High Probability)",
-  "setup_name": "{setup_name}",
-  "entry_price": {entry_p},
-  "sl_price": {sl_p},
-  "tp_price": {tp_p},
-  "tp2_runner": {tp2_p},
-  "confluence_score": 93,
-  "sweep": "{sweep_txt}",
-  "sweep_price": {sweep_p},
-  "mss_price": {mss_p},
-  "fvg_top": {fvg_top},
-  "fvg_bot": {fvg_bot},
-  "range_zone": "{range_z}",
-  "trapped_liquidity": "{trapped_liq}",
-  "invalidation_thesis": "{inval_thesis}",
-  "matched_topic_ids": [1, 2, 4, 5, 6, 8, 9, 13, 17, 19, 28, 60, 93, 94, 98],
-  "agent_swarm": {{
-    "liquidity_detective": "Price purged liquidity extreme taking out retail stops.",
-    "structure_auditor": "Displacement confirmed Market Structure Shift (#4 MSS) creating active 15m FVG.",
-    "risk_officer": "Entry at 50% CE offers institutional 1:2.0 Risk-to-Reward."
+  "setup_detected": {str(math_struct['has_setup']).lower()},
+  "bias": "{math_struct['bias']}",
+  "sweep_level": {math_struct['sweep_level']},
+  "mss_level": {math_struct['mss_level']},
+  "fvg_top": {math_struct['fvg_top']},
+  "fvg_bottom": {math_struct['fvg_bottom']},
+  "entry_ce": {math_struct['entry_ce']},
+  "stop_loss": {math_struct['stop_loss']},
+  "take_profit_1": {math_struct['take_profit_1']},
+  "risk_reward_ratio": {math_struct['risk_reward_ratio']},
+  "action": "{math_struct['action']}",
+  "rejection_reason": "{'; '.join(math_struct['rejection_reasons']) if math_struct['rejection_reasons'] else None}",
+  "agent_votes": {{
+    "liquidity_detective": "{"PASS" if math_struct['sweep_type'] != 'NONE' else "REJECT"}",
+    "structure_auditor": "{"PASS" if math_struct['mss_confirmed'] else "REJECT"}",
+    "risk_officer": "{"PASS" if (math_struct['risk_reward_ratio'] >= 2.0 and is_kz_pass) else "REJECT"}"
   }},
-  "explanation_hinglish": "Bhai live Deriv 15m feed par smart money footprint detect hua hai..."
+  "agent_swarm": {{
+    "liquidity_detective": "Detailed evaluation of sweep depth, external BSL/SSL pools, and retail traps.",
+    "structure_auditor": "Audit of displacement candle body ratio (>=0.70) and unmitigated FVG at 50% CE.",
+    "risk_officer": "Verification of 1:2.0 RR minimum and Killzone window pass status."
+  }},
+  "explanation_hinglish": "Clear, professional institutional reasoning in Hinglish summarizing the consensus."
 }}
 """
-                    gemini_raw, used_model, gemini_err = call_gemini([swarm_prompt], preferred_model_type=st.session_state.agi_model_mode)
-                    if gemini_raw:
-                        g_data = parse_gemini_json(gemini_raw)
-                        if g_data and isinstance(g_data, dict):
-                            verdict = str(g_data.get("verdict", verdict)).upper()
-                            setup_grade = str(g_data.get("setup_grade", setup_grade))
-                            setup_name = str(g_data.get("setup_name", setup_name))
-                            entry_p = float(g_data.get("entry_price", entry_p))
-                            sl_p = float(g_data.get("sl_price", sl_p))
-                            tp_p = float(g_data.get("tp_price", tp_p))
-                            tp2_p = float(g_data.get("tp2_runner", tp2_p))
-                            score = int(g_data.get("confluence_score", score))
-                            sweep_txt = str(g_data.get("sweep", sweep_txt))
-                            sweep_p = float(g_data.get("sweep_price", sweep_p))
-                            mss_p = float(g_data.get("mss_price", mss_p))
-                            fvg_top = float(g_data.get("fvg_top", fvg_top))
-                            fvg_bot = float(g_data.get("fvg_bot", fvg_bot))
-                            range_z = str(g_data.get("range_zone", range_z))
-                            trapped_liq = str(g_data.get("trapped_liquidity", trapped_liq))
-                            inval_thesis = str(g_data.get("invalidation_thesis", inval_thesis))
-                            topic_ids = g_data.get("matched_topic_ids", topic_ids)
-                            agent_swarm_data = g_data.get("agent_swarm", {})
-                            ai_reply = g_data.get("explanation_hinglish", gemini_raw)
-                        else:
-                            ai_reply = gemini_raw
-                    else:
-                        agent_swarm_data = {
-                            "liquidity_detective": f"Smart money engineered liquidity by sweeping key swing point ({sweep_txt}).",
-                            "structure_auditor": f"Displacement momentum confirmed Market Structure Shift (#4 MSS at ${mss_p:.1f}) and FVG.",
-                            "risk_officer": f"Strict 1:2.0 Risk-to-Reward ratio calculated: Entry ${entry_p:.2f}, SL ${sl_p:.2f}, TP1 ${tp_p:.2f}."
-                        }
-                        ai_reply = f"""### 🧠 Frontier AGI Institutional Trade Blueprint (Deriv Spot frxXAUUSD):
-- **Live Feed:** `{feed_source}` | **Current Spot:** **${spot_price:.2f}**
-- **AGI Model Grade:** ⭐ **{setup_grade}** ({setup_name})
-- **Market Structure Shift (#4 MSS):** Structural pivot confirmed at **${mss_p:.2f}**.
-- **Liquidity Sweep (#13 Sweep):** Retail liquidity swept (**{sweep_txt}**).
-- **50% CE Limit Entry (#28 CE):** Key mitigation level at **${entry_p:.2f}**.
-- **Execution Blueprint:** Entry: **${entry_p:.2f}** | SL: **${sl_p:.2f}** | TP1 (1:2 R:R): **${tp_p:.2f}** | TP2 (Runner): **${tp2_p:.2f}**.
-- **Trapped Retail Pool:** {trapped_liq}.
-"""
+                contents = [swarm_governance_prompt]
+                if input_img is not None:
+                    contents = [input_img.convert("RGB"), swarm_governance_prompt]
 
-                    # Dynamic lot sizing calculation
-                    sl_dist = abs(entry_p - sl_p)
-                    sl_pips = max(5.0, sl_dist * 10.0)
-                    risk_cash = st.session_state.account_balance * (st.session_state.risk_percent / 100.0)
-                    rec_lot = round(risk_cash / (sl_pips * 10.0), 2)
-
-                    # RENDER PURE CAMERON4X CANDLESTICK CHART FROM LIVE DATA
-                    marked_chart_pil = render_native_cameron4x_chart(
-                        df_live,
-                        verdict=verdict,
-                        setup_name=setup_name,
-                        score=score,
-                        session_txt=session_label,
-                        entry_p=entry_p,
-                        sl_p=sl_p,
-                        tp_p=tp_p,
-                        sweep_p=sweep_p,
-                        mss_p=mss_p,
-                        fvg_top=fvg_top,
-                        fvg_bot=fvg_bot
-                    )
-
-                    matched_topics = [{"id": tid, "name": TOPIC_NAMES.get(tid, f"Topic #{tid}")} for tid in topic_ids]
-
-                    trade_card_data = {
-                        "verdict": verdict,
-                        "setup_grade": setup_grade,
-                        "setup_name": setup_name,
-                        "chart_price": spot_price,
-                        "entry_p": entry_p,
-                        "sl_p": sl_p,
-                        "tp_p": tp_p,
-                        "tp2_runner": tp2_p,
-                        "confluence_score": score,
-                        "range_zone": range_z,
-                        "trapped_liquidity": trapped_liq,
-                        "invalidation_thesis": inval_thesis,
-                        "recommended_lot": rec_lot,
-                        "risk_amount": risk_cash
-                    }
-                else:
-                    ai_reply = f"⚠️ Unable to fetch live Gold feed: {feed_err}. Please try again or upload a screenshot."
-
-            # -------------------------------------------------------------
-            # CASE B: SCREENSHOT UPLOAD (Mode B - Clean Candlesticks)
-            # -------------------------------------------------------------
-            elif input_img is not None:
-                chart_p = 4128.00
-                verdict = "SELL_LIMIT"
-                setup_grade = "A+ Institutional (High Probability)"
-                setup_name = "ICT 2022 Mentorship Sell"
-                entry_p = 4134.00
-                sl_p = 4146.00
-                tp_p = 4110.00
-                tp2_p = 4095.00
-                score = 92
-                sweep_txt = "BSL Swept (+12.4 pips)"
-                range_z = "PREMIUM (Sell Zone)"
-                trapped_liq = "Retail breakout buyers trapped above swing high"
-                inval_thesis = "Candle body close beyond SL level completely invalidates order flow"
-                topic_ids = [1, 2, 4, 5, 6, 8, 9, 13, 17, 19, 28, 60, 93, 94, 98]
-
-                agi_vision_prompt = f"""
-You are an Elite AGI Multi-Agent Quantitative Hedge Fund System for Gold (XAU/USD) 15m trading.
-Analyze this 15m candlestick chart screenshot:
-Execute a 3-Agent Autonomous Swarm Debate:
-AGENT 1 (Liquidity Detective): Scans BSL/SSL sweeps and retail trap psychology.
-AGENT 2 (ICT Structure Auditor): Verifies displacement, Market Structure Shift (MSS), FVG, and 50% CE.
-AGENT 3 (Chief Risk Officer): Enforces minimum 1:2.0 Risk-to-Reward ratio.
-
-Return ONLY a valid JSON object matching this schema:
-{{
-  "chart_price": 4128.00,
-  "verdict": "SELL_LIMIT",
-  "setup_grade": "A+ Institutional (High Probability)",
-  "setup_name": "ICT 2022 Mentorship Sell Model",
-  "entry_price": 4134.00,
-  "sl_price": 4146.00,
-  "tp_price": 4110.00,
-  "tp2_runner": 4095.00,
-  "confluence_score": 92,
-  "sweep": "BSL Swept (+12.4 pips)",
-  "range_zone": "PREMIUM (Sell Zone)",
-  "trapped_liquidity": "Retail breakout buyers trapped above swing high",
-  "invalidation_thesis": "Candle body close above SL invalidates the institutional order flow",
-  "matched_topic_ids": [1, 2, 4, 5, 6, 8, 9, 13, 17, 19, 28, 60, 93, 94, 98],
-  "agent_swarm": {{
-    "liquidity_detective": "Price purged old swing highs, taking out retail buy stops before reversing.",
-    "structure_auditor": "Displacement broke through the structural swing low, confirming Market Structure Shift (#4 MSS) and creating an active FVG.",
-    "risk_officer": "Entry at 50% CE with SL offers 1:2.0 R:R to TP1 and 1:3.4 to TP2."
-  }},
-  "explanation_hinglish": "Bhai chart par AGI model ne clean institutional footprint detect kiya hai..."
-}}
-"""
-                gemini_raw, used_model, gemini_err = call_gemini([input_img.convert("RGB"), agi_vision_prompt], preferred_model_type=st.session_state.agi_model_mode)
+                gemini_raw, used_model, gemini_err = call_gemini(contents, preferred_model_type=st.session_state.agi_model_mode)
+                
+                final_action = math_struct["action"]
+                final_rejection = "; ".join(math_struct["rejection_reasons"]) if math_struct["rejection_reasons"] else None
                 
                 if gemini_raw:
                     g_data = parse_gemini_json(gemini_raw)
                     if g_data and isinstance(g_data, dict):
-                        chart_p = float(g_data.get("chart_price", chart_p))
-                        verdict = str(g_data.get("verdict", verdict)).upper()
-                        setup_grade = str(g_data.get("setup_grade", setup_grade))
-                        setup_name = str(g_data.get("setup_name", setup_name))
-                        entry_p = float(g_data.get("entry_price", entry_p))
-                        sl_p = float(g_data.get("sl_price", sl_p))
-                        tp_p = float(g_data.get("tp_price", tp_p))
-                        tp2_p = float(g_data.get("tp2_runner", tp_p + 15.0 if "BUY" in verdict else tp_p - 15.0))
-                        score = int(g_data.get("confluence_score", score))
-                        sweep_txt = str(g_data.get("sweep", sweep_txt))
-                        range_z = str(g_data.get("range_zone", range_z))
-                        trapped_liq = str(g_data.get("trapped_liquidity", trapped_liq))
-                        inval_thesis = str(g_data.get("invalidation_thesis", inval_thesis))
-                        topic_ids = g_data.get("matched_topic_ids", topic_ids)
+                        agent_votes = g_data.get("agent_votes", {})
+                        # Enforce Unanimous Consensus Protocol
+                        v1 = agent_votes.get("liquidity_detective", "PASS") == "PASS"
+                        v2 = agent_votes.get("structure_auditor", "PASS") == "PASS"
+                        v3 = agent_votes.get("risk_officer", "PASS") == "PASS"
+
+                        if not (v1 and v2 and v3 and is_kz_pass and math_struct["has_setup"]):
+                            final_action = "WAIT"
+                            final_rejection = g_data.get("rejection_reason") or final_rejection or "Unanimous Consensus not achieved"
+                        else:
+                            final_action = g_data.get("action", math_struct["action"])
+
                         agent_swarm_data = g_data.get("agent_swarm", {})
                         ai_reply = g_data.get("explanation_hinglish", gemini_raw)
                     else:
                         ai_reply = gemini_raw
                 else:
                     agent_swarm_data = {
-                        "liquidity_detective": f"Smart money engineered liquidity by sweeping key swing highs/lows ({sweep_txt}).",
-                        "structure_auditor": "Displacement momentum candle broke structural pivot confirming Market Structure Shift (#4 MSS).",
-                        "risk_officer": "Strict 1:2.0 Risk-to-Reward ratio calculated with invalidation behind swing extreme."
+                        "liquidity_detective": f"Sweep Status: {math_struct['sweep_type']} at ${math_struct['sweep_level']:.2f}.",
+                        "structure_auditor": f"MSS Status: {'Confirmed' if math_struct['mss_confirmed'] else 'Pending'} at ${math_struct['mss_level']:.2f}.",
+                        "risk_officer": f"R:R Ratio: {math_struct['risk_reward_ratio']} | Killzone Gate: {kz_code} ({'PASS' if is_kz_pass else 'HOLD'})."
                     }
-                    ai_reply = f"""### 🧠 Frontier AGI Institutional Trade Blueprint:
-- **AGI Model Grade:** ⭐ **{setup_grade}**
-- **Market Structure Shift (#4 MSS):** Structural shift confirmed with energetic displacement.
-- **Liquidity Engineering (#13 Sweep):** Retail stops swept ({sweep_txt}).
-- **50% CE Limit Entry (#28 CE):** Key institutional mitigation level at **${entry_p:.2f}**.
-- **Execution Blueprint:** Entry: **${entry_p:.2f}** | SL: **${sl_p:.2f}** | TP1 (1:2 R:R): **${tp_p:.2f}** | TP2 (Runner): **${tp2_p:.2f}**.
-- **Trapped Retail Pool:** {trapped_liq}.
+                    ai_reply = f"""### 🧠 Deterministic Institutional Consensus Report:
+- **Feed:** `{feed_source}` | **Current Spot:** **${spot_price:.2f}**
+- **Action Verdict:** `{final_action}` ({math_struct['verdict']})
+- **Liquidity Sweep:** {math_struct['sweep_type']} at **${math_struct['sweep_level']:.2f}**
+- **Market Structure Shift:** {'Confirmed' if math_struct['mss_confirmed'] else 'Pending'} at **${math_struct['mss_level']:.2f}**
+- **50% CE Entry:** **${math_struct['entry_ce']:.2f}** | **SL:** **${math_struct['stop_loss']:.2f}** | **TP1:** **${math_struct['take_profit_1']:.2f}** (1:2.0 R:R)
+- **Killzone Evaluation:** {kz_desc}
 """
 
-                sl_dist = abs(entry_p - sl_p)
-                sl_pips = max(5.0, sl_dist * 10.0)
-                risk_cash = st.session_state.account_balance * (st.session_state.risk_percent / 100.0)
-                rec_lot = round(risk_cash / (sl_pips * 10.0), 2)
-
-                # Fetch live candles or generate clean native candlestick chart
-                df_c, _, _, _ = fetch_live_gold_candles(granularity=900, count=40)
+                # 3. RENDER PURE CAMERON4X CANDLESTICK CHART (BOUND STRICTLY TO COMPUTED FLOATS)
                 marked_chart_pil = render_native_cameron4x_chart(
-                    df_c, verdict=verdict, setup_name=setup_name, score=score,
-                    session_txt=session_label, entry_p=entry_p, sl_p=sl_p, tp_p=tp_p
+                    df_live,
+                    math_structure=math_struct,
+                    session_txt=session_label
                 )
 
-                matched_topics = [{"id": tid, "name": TOPIC_NAMES.get(tid, f"Topic #{tid}")} for tid in topic_ids]
+                # Topics from structured knowledge store
+                matched_topics = [
+                    {"id": 13, "name": "Liquidity Sweep / Turtle Soup"},
+                    {"id": 4, "name": "Market Structure Shift (MSS)"},
+                    {"id": 17, "name": "Fair Value Gap (FVG)"},
+                    {"id": 28, "name": "Consequent Encroachment (50% CE)"},
+                    {"id": 94, "name": "Risk-to-Reward Ratio (1:2.0 Minimum)"},
+                    {"id": 95, "name": "Deterministic Lot Sizing"}
+                ]
 
                 trade_card_data = {
-                    "verdict": verdict,
-                    "setup_grade": setup_grade,
-                    "setup_name": setup_name,
-                    "chart_price": chart_p,
-                    "entry_p": entry_p,
-                    "sl_p": sl_p,
-                    "tp_p": tp_p,
-                    "tp2_runner": tp2_p,
-                    "confluence_score": score,
-                    "range_zone": range_z,
-                    "trapped_liquidity": trapped_liq,
-                    "invalidation_thesis": inval_thesis,
-                    "recommended_lot": rec_lot,
-                    "risk_amount": risk_cash
+                    "verdict": math_struct["verdict"],
+                    "action": final_action,
+                    "setup_grade": math_struct["setup_grade"],
+                    "setup_name": math_struct["setup_name"],
+                    "chart_price": spot_price,
+                    "entry_p": math_struct["entry_ce"],
+                    "sl_p": math_struct["stop_loss"],
+                    "tp_p": math_struct["take_profit_1"],
+                    "tp2_runner": math_struct["take_profit_2"],
+                    "rr_ratio": math_struct["risk_reward_ratio"],
+                    "confluence_score": math_struct["confluence_score"],
+                    "range_zone": math_struct["range_zone"],
+                    "trapped_liquidity": math_struct["trapped_liquidity"],
+                    "invalidation_thesis": math_struct["invalidation_thesis"],
+                    "recommended_lot": math_struct["recommended_lot"] if final_action == "EXECUTE_LIMIT" else 0.0,
+                    "risk_amount": math_struct["risk_amount"] if final_action == "EXECUTE_LIMIT" else 0.0,
+                    "rejection_reasons": math_struct["rejection_reasons"] if final_action == "WAIT" else []
                 }
-
-            # -------------------------------------------------------------
-            # CASE C: TEXT FOLLOW-UP IN ONGOING CHAT
-            # -------------------------------------------------------------
             else:
-                conv_history = [{"role": m["role"], "content": m["content"]} for m in st.session_state.messages[-4:]]
-                followup_prompt = f"""
-You are an Elite AGI Institutional Quantitative Hedge Fund Trader & ICT Master.
-The user is trading XAU/USD (Gold) on the 15-Minute (15m) timeframe.
-
-RECENT CONVERSATION:
-{json.dumps(conv_history, indent=2)}
-
-USER QUESTION:
-{user_text}
-
-INSTRUCTIONS:
-1. Speak in natural, authoritative Hinglish with institutional clarity (like ChatGPT / Claude).
-2. Answer directly with deep ICT concepts (Topic #4 MSS, #13 Sweeps, #17 FVG, #28 50% CE, #98 SL placement, IPDA dealing ranges).
-3. Keep it practical, structured, and zero hallucination.
-"""
-                txt_reply, used_m, txt_err = call_gemini([followup_prompt], preferred_model_type=st.session_state.agi_model_mode)
-                ai_reply = txt_reply if txt_reply else (txt_err or "Please provide your question or upload a chart.")
+                ai_reply = f"⚠️ Unable to fetch live Gold feed: {feed_err}. Please check your connection."
 
             # Save assistant message to session state
             assistant_entry = {
