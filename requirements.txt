@@ -8,3 +8,4 @@ yfinance
 pyarrow
 requests
 plotly
+websocket-client
