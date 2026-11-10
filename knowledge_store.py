@@ -99,3 +99,6 @@ class ICTKnowledgeStore:
 
     def get_all_topics_summary(self):
         return {t["id"]: t["name"] for t in self.topics}
+
+# Module-level convenience aliases
+get_killzone_window = ICTKnowledgeStore.get_killzone_window
