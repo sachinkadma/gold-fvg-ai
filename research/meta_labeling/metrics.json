@@ -1,0 +1,269 @@
+{
+  "split": "train",
+  "cost_assumptions": {
+    "spread": 0.35,
+    "slippage": 0.1,
+    "commission_per_lot": 7.0,
+    "min_sl": 3.0,
+    "sl_buffer": 1.5,
+    "rr": 2.0,
+    "swing_len": 5,
+    "order_expiry_bars": 8,
+    "risk_percent": 0.01,
+    "initial_equity": 10000.0
+  },
+  "overall": {
+    "trade_count": 684,
+    "win_count": 212,
+    "loss_count": 472,
+    "win_rate_pct": 30.99,
+    "profit_factor": 0.78,
+    "average_r": -0.171,
+    "expectancy_r": -0.171,
+    "expectancy_ci_95": [
+      -0.276,
+      -0.067
+    ],
+    "max_drawdown_r": 122.51,
+    "max_drawdown_pct": 72.52,
+    "longest_losing_streak": 12,
+    "avg_duration_bars": 68.0,
+    "total_net_usd": -7091.47,
+    "total_net_r": -116.75,
+    "sample_size_warning": false
+  },
+  "per_direction": {
+    "Long (BUY)": {
+      "trade_count": 336,
+      "win_count": 107,
+      "loss_count": 229,
+      "win_rate_pct": 31.85,
+      "profit_factor": 0.81,
+      "average_r": -0.145,
+      "expectancy_r": -0.145,
+      "expectancy_ci_95": [
+        -0.293,
+        0.003
+      ],
+      "max_drawdown_r": 54.76,
+      "max_drawdown_pct": 72.2,
+      "longest_losing_streak": 10,
+      "avg_duration_bars": 72.3,
+      "total_net_usd": -3620.68,
+      "total_net_r": -48.87,
+      "sample_size_warning": false
+    },
+    "Short (SELL)": {
+      "trade_count": 348,
+      "win_count": 105,
+      "loss_count": 243,
+      "win_rate_pct": 30.17,
+      "profit_factor": 0.75,
+      "average_r": -0.195,
+      "expectancy_r": -0.195,
+      "expectancy_ci_95": [
+        -0.331,
+        -0.05
+      ],
+      "max_drawdown_r": 74.62,
+      "max_drawdown_pct": 72.23,
+      "longest_losing_streak": 10,
+      "avg_duration_bars": 63.9,
+      "total_net_usd": -3470.79,
+      "total_net_r": -67.88,
+      "sample_size_warning": false
+    }
+  },
+  "per_year": {
+    "2015": {
+      "trade_count": 86,
+      "win_count": 26,
+      "loss_count": 60,
+      "win_rate_pct": 30.23,
+      "profit_factor": 0.74,
+      "average_r": -0.201,
+      "expectancy_r": -0.201,
+      "expectancy_ci_95": [
+        -0.476,
+        0.11
+      ],
+      "max_drawdown_r": 18.05,
+      "max_drawdown_pct": 17.19,
+      "longest_losing_streak": 8,
+      "avg_duration_bars": 73.4,
+      "total_net_usd": -1657.4,
+      "total_net_r": -17.29,
+      "sample_size_warning": true
+    },
+    "2016": {
+      "trade_count": 104,
+      "win_count": 31,
+      "loss_count": 73,
+      "win_rate_pct": 29.81,
+      "profit_factor": 0.74,
+      "average_r": -0.202,
+      "expectancy_r": -0.202,
+      "expectancy_ci_95": [
+        -0.467,
+        0.056
+      ],
+      "max_drawdown_r": 23.1,
+      "max_drawdown_pct": 21.34,
+      "longest_losing_streak": 10,
+      "avg_duration_bars": 63.5,
+      "total_net_usd": -1646.35,
+      "total_net_r": -20.98,
+      "sample_size_warning": false
+    },
+    "2017": {
+      "trade_count": 90,
+      "win_count": 23,
+      "loss_count": 67,
+      "win_rate_pct": 25.56,
+      "profit_factor": 0.59,
+      "average_r": -0.347,
+      "expectancy_r": -0.347,
+      "expectancy_ci_95": [
+        -0.592,
+        -0.047
+      ],
+      "max_drawdown_r": 33.16,
+      "max_drawdown_pct": 28.81,
+      "longest_losing_streak": 10,
+      "avg_duration_bars": 79.5,
+      "total_net_usd": -1836.38,
+      "total_net_r": -31.21,
+      "sample_size_warning": true
+    },
+    "2018": {
+      "trade_count": 76,
+      "win_count": 24,
+      "loss_count": 52,
+      "win_rate_pct": 31.58,
+      "profit_factor": 0.78,
+      "average_r": -0.166,
+      "expectancy_r": -0.166,
+      "expectancy_ci_95": [
+        -0.481,
+        0.152
+      ],
+      "max_drawdown_r": 18.47,
+      "max_drawdown_pct": 17.45,
+      "longest_losing_streak": 6,
+      "avg_duration_bars": 99.3,
+      "total_net_usd": -610.0,
+      "total_net_r": -12.65,
+      "sample_size_warning": true
+    },
+    "2019": {
+      "trade_count": 90,
+      "win_count": 26,
+      "loss_count": 64,
+      "win_rate_pct": 28.89,
+      "profit_factor": 0.69,
+      "average_r": -0.251,
+      "expectancy_r": -0.251,
+      "expectancy_ci_95": [
+        -0.523,
+        0.048
+      ],
+      "max_drawdown_r": 28.27,
+      "max_drawdown_pct": 24.92,
+      "longest_losing_streak": 12,
+      "avg_duration_bars": 85.0,
+      "total_net_usd": -889.32,
+      "total_net_r": -22.6,
+      "sample_size_warning": true
+    },
+    "2020": {
+      "trade_count": 118,
+      "win_count": 44,
+      "loss_count": 74,
+      "win_rate_pct": 37.29,
+      "profit_factor": 1.05,
+      "average_r": 0.036,
+      "expectancy_r": 0.036,
+      "expectancy_ci_95": [
+        -0.224,
+        0.291
+      ],
+      "max_drawdown_r": 13.9,
+      "max_drawdown_pct": 13.38,
+      "longest_losing_streak": 8,
+      "avg_duration_bars": 50.9,
+      "total_net_usd": 102.84,
+      "total_net_r": 4.25,
+      "sample_size_warning": false
+    },
+    "2021": {
+      "trade_count": 120,
+      "win_count": 38,
+      "loss_count": 82,
+      "win_rate_pct": 31.67,
+      "profit_factor": 0.82,
+      "average_r": -0.136,
+      "expectancy_r": -0.136,
+      "expectancy_ci_95": [
+        -0.384,
+        0.135
+      ],
+      "max_drawdown_r": 29.19,
+      "max_drawdown_pct": 26.09,
+      "longest_losing_streak": 9,
+      "avg_duration_bars": 43.9,
+      "total_net_usd": -554.86,
+      "total_net_r": -16.27,
+      "sample_size_warning": false
+    }
+  },
+  "per_killzone": {
+    "LONDON": {
+      "trade_count": 313,
+      "win_count": 98,
+      "loss_count": 215,
+      "win_rate_pct": 31.31,
+      "profit_factor": 0.78,
+      "average_r": -0.164,
+      "expectancy_r": -0.164,
+      "expectancy_ci_95": [
+        -0.32,
+        -0.027
+      ],
+      "max_drawdown_r": 57.39,
+      "max_drawdown_pct": 71.96,
+      "longest_losing_streak": 11,
+      "avg_duration_bars": 57.3,
+      "total_net_usd": -2803.3,
+      "total_net_r": -51.25,
+      "sample_size_warning": false
+    },
+    "NY_AM": {
+      "trade_count": 371,
+      "win_count": 114,
+      "loss_count": 257,
+      "win_rate_pct": 30.73,
+      "profit_factor": 0.77,
+      "average_r": -0.177,
+      "expectancy_r": -0.177,
+      "expectancy_ci_95": [
+        -0.32,
+        -0.03
+      ],
+      "max_drawdown_r": 71.18,
+      "max_drawdown_pct": 72.31,
+      "longest_losing_streak": 14,
+      "avg_duration_bars": 77.1,
+      "total_net_usd": -4288.17,
+      "total_net_r": -65.5,
+      "sample_size_warning": false
+    }
+  },
+  "buy_and_hold_benchmark": {
+    "start_date": "2015-01-01 00:00:00-05:00",
+    "end_date": "2021-12-31 16:45:00-05:00",
+    "start_price": 1183.41,
+    "end_price": 1829.06,
+    "price_change_pts": 645.65,
+    "buy_and_hold_return_pct": 54.56
+  }
+}

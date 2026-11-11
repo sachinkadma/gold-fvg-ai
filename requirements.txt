@@ -1,4 +1,5 @@
 streamlit
+pandas
 numpy
 Pillow
 requests
@@ -6,6 +7,9 @@ plotly
 pyarrow
 yfinance
 websocket-client
+matplotlib
+pytest
+python-dotenv
 sentence-transformers
 ultralytics
 opencv-python-headless

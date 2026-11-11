@@ -2,3 +2,13 @@ __pycache__/
 *.pyc
 .env
 .streamlit/secrets.toml
+.pytest_cache/
+
+# Heavy raw and generated historical datasets
+data/
+*.parquet
+
+# Root runtime backtester simulation outputs
+/trades.csv
+/metrics.json
+/equity_curve.png

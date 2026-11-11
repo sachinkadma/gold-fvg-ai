@@ -1,97 +1,96 @@
-# 🧠 Gold ICT AGI - Institutional 15m Co-Pilot
+# Institutional XAUUSD ICT Quantitative Strategy Engine
 
-An autonomous, multi-agent AI quantitative trading terminal for **Gold (XAU/USD / frxXAUUSD)** on the **15-Minute (15m)** timeframe, powered by **Frontier Gen AI (Gemini 2.0 Flash Thinking)**, **Deriv Public WebSocket Gateway**, **Deterministic Elliott Wave Engine**, and a native **Cameron4x Institutional Candlestick Visualizer**.
-
----
-
-## 🌐 Live Deployments & Links
-- **🚀 Live Web Terminal:** [gold-fvg-ai-ahwmxvqf93rfjaqfkhxxyr.streamlit.app](https://gold-fvg-ai-ahwmxvqf93rfjaqfkhxxyr.streamlit.app)
-- **📦 GitHub Repository:** [github.com/sachinkadma/gold-fvg-ai](https://github.com/sachinkadma/gold-fvg-ai)
+A rigorous, causal algorithmic quantitative trading architecture for Gold (XAUUSD) on the 15-Minute timeframe. Built with zero look-ahead bias, realistic institutional friction ($0.35 spread, $0.10 slippage, $7/lot commission), and verified byte-for-byte reproducibility.
 
 ---
 
-## ⚡ Key Highlights & Capabilities
+## 🏛️ Repository Architecture
 
-### 1. 📡 Direct Deriv WebSocket Spot Feed (`frxXAUUSD`)
-- Direct live candlestick streaming from **Deriv Public WebSocket Gateway** (`wss://ws.derivws.com/websockets/v3?app_id=1089`) using public test App ID `1089` (no broker account or API token required).
-- Resilient secondary REST spot Gold failover (`GC=F`) for 100% uptime with zero downtime.
-- **1-Click Live Scan:** Users tap `⚡ Scan Live 15m Gold (Deriv Spot)` to instantly fetch the live 15m candle array, analyze market structure, and generate institutional execution blueprints.
-
-### 2. 🌊 Deterministic Elliott Wave Theory (EWT) Engine
-- Pure mathematical vector calculation of the **3 Cardinal Rules of Elliott Wave**:
-  - **Rule 1 (Wave 2 Retracement):** Wave 2 never breaks below Wave 0 origin ($P_2 > P_0$ in bull; $P_2 < P_0$ in bear).
-  - **Rule 2 (Wave 3 Length):** Wave 3 is never the shortest wave among Waves 1, 3, and 5.
-  - **Rule 3 (Wave 4 Territory Overlap):** Wave 4 never enters Wave 1 price territory ($P_4 > P_1$ in bull; $P_4 < P_1$ in bear).
-- Computes Fibonacci Extension ratios ($W_3 / W_1$) and classifies cycle phases:
-  - `IN_WAVE_3_EXPANSION`
-  - `IN_WAVE_4_PULLBACK`
-  - `IN_WAVE_5_TERMINAL_SWEEP`
-  - `COMPLETED_IMPULSE_AWAITING_ABC`
-  - `CARDINAL_RULE_VIOLATION` (Hard Veto Gate)
-
-### 3. 🕯️ Native Cameron4x Candlestick Visualizer & Wave Badges
-- High-resolution (940x540) dark-themed institutional candlestick charts on `#0B1120`:
-  - **Candles:** Emerald Green (`#10B981`) and Coral Red (`#EF4444`) with precise wicks and bodies.
-  - **🌊 Wave Badges & Rails:** Circular cyan badges with `(0)`, `(1)`, `(2)`, `(3)`, `(4)`, `(5)` labels connected by dashed trend rails.
-  - **⚡ #13 Liquidity Sweep:** Horizontal cyan ray marking BSL or SSL sweeps.
-  - **⚡ #4 MSS (Market Structure Shift):** Crisp white dashed line marking structural breaks.
-  - **🟩 #17 Bull FVG / 🟥 #17 Bear FVG:** Translucent shaded institutional imbalance zones.
-  - **🔹 #28 50% Consequent Encroachment (50% CE):** Cyan dashed midline representing the optimal limit entry.
-  - **🎯 #94 Institutional Target:** Mint green rail enforcing strict 1:2.0 Risk-to-Reward ratio.
-  - **🟡 Spot Price Ray:** Real-time spot price dotted line with right-axis price badge.
-
-### 4. 🤖 4-Agent Frontier AGI Swarm (Unanimous Consensus Protocol)
-- **Agent 1 (Liquidity Detective):** Scans old highs/lows purges, BSL/SSL sweeps, and retail liquidity trap engineering.
-- **Agent 2 (ICT Structure Auditor):** Confirms displacement candle energy, MSS confirmation, 3-candle FVG boundaries, and 50% CE.
-- **Agent 3 (Elliott Wave Specialist):** Validates 5-wave motive sequence, cardinal rules, and prohibits buying/selling Wave 5 terminal exhaustion wicks.
-- **Agent 4 (Chief Risk Officer):** Enforces minimum 1:2.0 Risk-to-Reward ratio, invalidation thesis, and dynamic lot sizing.
-
-### 5. 🛡️ Dynamic Risk Management & Lot Sizer (Topic #93 & #98)
-- Inputs: Account Balance ($) and Risk Per Trade (0.5% - 3.0%).
-- Dynamically computes lot size:
-  $$\text{Risk Capital} = \text{Balance} \times \left(\frac{\text{Risk } \%}{100}\right)$$
-  $$\text{Recommended Lots} = \frac{\text{Risk Capital}}{\text{SL Pips} \times 10}$$
-
-### 6. 📲 Telegram Automation & 15m Candle Close Alerts
-- Dispatches high-res Cameron4x chart images and formatted markdown blueprints to Telegram channels or private phones with a single click.
-- Live New York session clock tracking Asian Range, London KZ, NY AM KZ, Silver Bullet, and NY PM KZ.
-- Live countdown to the next 15m candle close (`:00`, `:15`, `:30`, `:45` EST) with immediate test alert trigger.
-
-### 7. 📚 Structured Knowledge Store (108 Topics)
-- Structured JSON schemas in `knowledge/` (`liquidity.json`, `structure.json`, `entry_models.json`, `risk.json`, `elliott_wave.json`).
-- Temporal Killzone filtering via `knowledge_store.py`.
-
----
-
-## 📂 File Architecture
-
-| File | Description |
-| :--- | :--- |
-| `streamlit_app.py` | Main application: Streamlit UI, ChatGPT-style chat, 4-Agent Swarm, trade cards, Telegram integration |
-| `deriv_client.py` | Deriv WebSocket client, deterministic math engine, Elliott Wave analyzer, and Cameron4x visualizer |
-| `knowledge_store.py` | Structured knowledge store with temporal killzone metadata retrieval |
-| `knowledge/*.json` | Structured JSON topic schemas covering liquidity, structure, entry models, risk, and Elliott Wave |
-| `test_elliott_wave.py` | Automated unit tests for Elliott Wave Cardinal Rules |
-| `test_deterministic_engine.py` | Automated unit tests for deterministic ICT calculations |
-| `requirements.txt` | Python dependencies (`streamlit`, `websocket-client`, `opencv-python-headless`, etc.) |
-| `.streamlit/config.toml` | High-contrast dark theme configuration for 100% text visibility on mobile and desktop |
-
----
-
-## 🚀 Local Setup & Installation
-
-```bash
-# 1. Clone repository
-git clone https://github.com/sachinkadma/gold-fvg-ai.git
-cd gold-fvg-ai
-
-# 2. Install dependencies
-pip install -r requirements.txt
-
-# 3. Run unit tests
-python test_elliott_wave.py
-python test_deterministic_engine.py
-
-# 4. Launch web terminal
-streamlit run streamlit_app.py
+```text
+.
+├── core/                           # Deterministic core strategy & backtesting engine
+│   ├── config.py                   # Strategy parameters, costs, and session windows
+│   ├── data_loader.py              # Schema normalization & DST-aware timezone handling
+│   ├── signals.py                  # Causal 5-bar swing detection, MSS, and FVG triggers
+│   ├── backtester.py               # Bar-by-bar causal simulation with conservative fill/SL rules
+│   ├── metrics.py                  # Institutional performance metrics, CI, and equity curve
+│   └── strategy.py                 # Core strategy abstraction
+│
+├── research/                       # Research, diagnostics & experiment tracking
+│   ├── experiments.csv             # Pre-registered trials log (E1, E2, E3, E4)
+│   └── meta_labeling/              # Causal feature generation & ML meta-labeling pipeline
+│       ├── pipeline_metalabeling.py # LightGBM causal meta-labeling classifier
+│       ├── trades.csv              # Stored benchmark baseline trades (684 trades)
+│       └── metrics.json            # Baseline JSON metrics report
+│
+├── app/                            # User Interface & Analytics Web Applications
+│   ├── streamlit_app.py            # Streamlit live visual co-pilot terminal
+│   └── backtest_view.py            # Read-only backtest analytics tab component
+│
+├── vision/                         # Computer Vision / YOLO Chart Annotators
+│   ├── best_v2_4class.pt           # YOLOv8 4-class bounding box weights
+│   └── README.md                   # Vision audit disclaimer (annotation vs edge)
+│
+├── legacy/                         # Non-causal visualization & broker connectors
+│   ├── deriv_client.py             # Deriv WebSocket client (marked non-causal)
+│   ├── mt5_client.py               # MT5 broker bridge (graceful Linux fallback)
+│   └── knowledge_store.py          # Structured ICT knowledge store
+│
+├── tests/                          # Automated Pytest Suite (All 6 test files)
+│   ├── test_causality.py           # Strict causality & truncation invariance tests
+│   ├── test_no_lookahead.py        # Random timestamp look-ahead assertion tests
+│   ├── test_deterministic_engine.py# Deterministic vector math verification
+│   ├── test_elliott_wave.py        # EWT cardinal rule validation tests
+│   ├── test_candidate_gen.py       # Causal candidate generator tests
+│   └── test_feature_gen.py         # Multi-timeframe feature generator tests
+│
+├── docs/                           # Methodological documentation & audit logs
+│   ├── DECISIONS.md                # Quantitative design decisions & architecture
+│   └── RESULTS.md                  # Baseline, Killzone, SL bucket & experiment findings
+│
+├── data/                           # Institutional Historical Data (Intact)
+│   ├── xauusd_15m_long.csv         # Dukascopy 2015-2026 15m bid-side historical data
+│   └── candidates.parquet          # Generated 24h causal candidates dataset
+│
+├── verify.py                       # Root verification script (hash lock & test suite)
+├── STATE.md                        # Master state tracker (< 50 lines)
+├── requirements.txt                # Python dependencies
+└── .env.example                    # Environment variable template
 ```
+
+---
+
+## ⚡ Quickstart Commands
+
+### 1. Verify Everything (One-Click Hash Lock Check)
+Runs the entire pytest test suite (7 tests across 6 files), re-runs the 7-year baseline simulation on TRAIN (2015–2021), and verifies that `trades.csv` matches the stored SHA256 byte-for-byte:
+```bash
+python verify.py
+# Outputs: PASS
+```
+
+### 2. Run the Causal Backtester CLI
+Execute the baseline strategy over the TRAIN split with full institutional execution friction:
+```bash
+python core/backtester.py --data data/xauusd_15m_long.csv --data-tz UTC --split train
+```
+*Note: The locked TEST set (2022+) requires the `--final` flag to prevent accidental snooping.*
+
+### 3. Run the Meta-Labeling ML Pipeline
+Extract 24-hour causal features at signal-bar close, train shallow LightGBM models on TRAIN (2015–2019), and evaluate on VALID (2020–2021) with zero leakage:
+```bash
+python research/meta_labeling/pipeline_metalabeling.py
+```
+
+### 4. Launch the Streamlit Analytics Terminal
+Launch the visual trading co-pilot and backtest analytics dashboard:
+```bash
+streamlit run app/streamlit_app.py
+```
+
+---
+
+## 📊 Core Performance Summary (TRAIN 2015–2021)
+- **Baseline Edge**: -0.171 R/trade net expectancy (684 trades, $0.45 total round-turn friction).
+- **Structural Stop Finding**: Micro-stops (< 5.0 pts) are consumed by friction; wide structural stops ($\ge 8.0$ pts) hold a verified positive edge (**+0.356 R on VALID**, 95% CI `[+0.106, +0.607]`).
+- **Full Findings**: Read [`docs/RESULTS.md`](docs/RESULTS.md) and [`docs/DECISIONS.md`](docs/DECISIONS.md).

@@ -1,9 +1,16 @@
+# NOT CAUSAL — Visualization / Legacy Only. Do not import in core/ or research/.
 import json, ssl, time, os
 import pandas as pd
 import numpy as np
 from datetime import datetime
 import requests
 from PIL import Image, ImageDraw, ImageFont
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    pass
 
 try:
     import zoneinfo
@@ -30,24 +37,39 @@ def fetch_live_gold_candles(
     granularity=900,
     count=50,
     source="AUTO",
-    mt5_login=115395873,
-    mt5_password=r"@iVu5gTh",
-    mt5_server="MetaQuotes-Demo",
-    mt5_symbol="XAUUSD"
+    mt5_login=None,
+    mt5_password=None,
+    mt5_server=None,
+    mt5_symbol=None
 ):
     """
     Fetches real-time 15m Gold candlestick array.
     Sources supported:
-      - 'MT5': Direct MetaTrader 5 account connection (Account 115395873 @ MetaQuotes-Demo)
+      - 'MT5': Direct MetaTrader 5 account connection
       - 'DERIV': Deriv Public WebSocket Gateway (frxXAUUSD)
       - 'SPOT': Live Gold Spot REST feed (GC=F)
       - 'AUTO': Priority MT5 (if on Windows with terminal) -> Deriv WebSocket -> Gold Spot
     Returns: df, cur_price, source_name, error_msg
     """
+    if mt5_login is None:
+        mt5_login = os.environ.get("MT5_LOGIN", 0)
+    if mt5_password is None:
+        mt5_password = os.environ.get("MT5_PASSWORD", "")
+    if mt5_server is None:
+        mt5_server = os.environ.get("MT5_SERVER", "MetaQuotes-Demo")
+    if mt5_symbol is None:
+        mt5_symbol = os.environ.get("MT5_SYMBOL", "XAUUSD")
     # 1. Attempt MetaTrader 5 if selected or in AUTO mode
     if source in ["MT5", "AUTO"]:
         try:
-            from mt5_client import fetch_mt5_gold_candles, is_mt5_available
+            try:
+                from legacy.mt5_client import fetch_mt5_gold_candles, is_mt5_available
+            except ImportError:
+                try:
+                    from mt5_client import fetch_mt5_gold_candles, is_mt5_available
+                except ImportError:
+                    fetch_mt5_gold_candles = None
+                    is_mt5_available = lambda: False
             if is_mt5_available():
                 df_mt5, cur_p_mt5, feed_name_mt5, err_mt5 = fetch_mt5_gold_candles(
                     login=mt5_login,
@@ -632,7 +654,7 @@ def compute_deterministic_market_structure(df, account_balance=10000.0, risk_per
             "bias": "BULLISH",
             "verdict": "BUY_LIMIT",
             "setup_name": "ICT 2022 Mentorship Buy Model",
-            "setup_grade": "A+ Institutional (High Probability)" if has_setup else "B+ Evaluation (Wait Criteria)",
+            "setup_grade": "Rule Match: Yes" if has_setup else "Rule Match: No",
             "current_price": current_price,
             "sweep_type": "SSL_SWEEP",
             "sweep_level": bullish_sweep["level"],
@@ -689,7 +711,7 @@ def compute_deterministic_market_structure(df, account_balance=10000.0, risk_per
             "bias": "BEARISH",
             "verdict": "SELL_LIMIT",
             "setup_name": "ICT 2022 Mentorship Sell Model",
-            "setup_grade": "A+ Institutional (High Probability)" if has_setup else "B+ Evaluation (Wait Criteria)",
+            "setup_grade": "Rule Match: Yes" if has_setup else "Rule Match: No",
             "current_price": current_price,
             "sweep_type": "BSL_SWEEP",
             "sweep_level": bearish_sweep["level"],
@@ -734,7 +756,7 @@ def compute_deterministic_market_structure(df, account_balance=10000.0, risk_per
         "bias": bias,
         "verdict": "WAIT_CONFIRMATION",
         "setup_name": "Structure Consolidation / Order Flow Building",
-        "setup_grade": "Neutral / Observation (No Execution)",
+        "setup_grade": "Rule Match: No",
         "current_price": current_price,
         "sweep_type": "NONE",
         "sweep_level": swing_lows[-1]["price"] if swing_lows else range_low,

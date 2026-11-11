@@ -11,8 +11,18 @@ class ICTKnowledgeStore:
     Structured ICT Knowledge Store with metadata and temporal killzone filtering.
     Replaces legacy flat text notes with schema-validated JSON topics.
     """
-    def __init__(self, knowledge_dir="knowledge"):
-        self.knowledge_dir = knowledge_dir
+    def __init__(self, knowledge_dir=None):
+        if knowledge_dir is None:
+            base = os.path.dirname(__file__)
+            cand = os.path.join(base, "knowledge")
+            if os.path.exists(cand):
+                self.knowledge_dir = cand
+            elif os.path.exists("legacy/knowledge"):
+                self.knowledge_dir = "legacy/knowledge"
+            else:
+                self.knowledge_dir = "knowledge"
+        else:
+            self.knowledge_dir = knowledge_dir
         self.categories = ["liquidity", "structure", "entry_models", "risk", "elliott_wave"]
         self.topics = []
         self.topic_map = {}

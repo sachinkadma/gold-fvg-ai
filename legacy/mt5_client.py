@@ -13,6 +13,12 @@ except Exception:
         import datetime as dt
         NY_TZ = dt.timezone.utc
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    pass
+
 DEFAULT_MT5_PATH = r"C:\Program Files\MetaTrader 5\terminal64.exe"
 
 def is_mt5_available():
@@ -24,10 +30,10 @@ def is_mt5_available():
         return False
 
 def fetch_mt5_gold_candles(
-    login=115395873,
-    password=r"@iVu5gTh",
-    server="MetaQuotes-Demo",
-    symbol="XAUUSD",
+    login=None,
+    password=None,
+    server=None,
+    symbol=None,
     timeframe="M15",
     count=50,
     terminal_path=None
@@ -37,6 +43,15 @@ def fetch_mt5_gold_candles(
     and pulls historical 15m candlestick bars.
     Returns: (df, latest_price, feed_name, error_msg)
     """
+    if login is None:
+        login = os.environ.get("MT5_LOGIN", 0)
+    if password is None:
+        password = os.environ.get("MT5_PASSWORD", "")
+    if server is None:
+        server = os.environ.get("MT5_SERVER", "MetaQuotes-Demo")
+    if symbol is None:
+        symbol = os.environ.get("MT5_SYMBOL", "XAUUSD")
+
     try:
         import MetaTrader5 as mt5
     except ImportError:

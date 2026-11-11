@@ -36,7 +36,14 @@ def build_mock_df_and_pivots(pivots_list, current_close):
     return df, swing_highs, swing_lows
 
 def run_ewt_unit_tests():
-    from deriv_client import detect_elliott_wave_cycle
+    import sys, os
+    REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    if REPO_ROOT not in sys.path:
+        sys.path.insert(0, REPO_ROOT)
+    try:
+        from legacy.deriv_client import detect_elliott_wave_cycle
+    except ImportError:
+        from deriv_client import detect_elliott_wave_cycle
     print("=== RUNNING DETERMINISTIC ELLIOTT WAVE (EWT) UNIT TESTS ===")
 
     # 1. TEST BULLISH 5-WAVE IMPULSE (All 3 Cardinal Rules Pass)
@@ -125,4 +132,8 @@ def run_ewt_unit_tests():
     print("\n[SUCCESS] ALL 4 ELLIOTT WAVE UNIT TESTS PASSED PERFECTLY!")
 
 if __name__ == "__main__":
+    run_ewt_unit_tests()
+
+
+def test_elliott_wave():
     run_ewt_unit_tests()
