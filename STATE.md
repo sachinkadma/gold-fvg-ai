@@ -9,7 +9,9 @@
 ## Current Performance Metrics
 | Engine / Model / Trial | Partition | Trades | Win Rate | Net Expectancy (R) | 95% Bootstrap CI | Profit Factor | Max DD (R) |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Baseline (Killzone)** | TRAIN (2015-2021) | 684 | 31.0% | -0.171 R | [-0.276, -0.067] | 0.78 | 122.51 R |
+| **Baseline (Killzone)** | TRAIN (2015-2019) | 446 | 29.1% | -0.235 R | [-0.359, -0.107] | 0.70 | 110.75 R |
+| **Baseline (Killzone)** | VALID (2020-2021) | 238 | 34.5% | -0.051 R | [-0.227, +0.137] | 0.93 | 33.27 R |
+| **Baseline (Killzone)** | COMBINED (2015-2021) | 684 | 31.0% | -0.171 R | [-0.276, -0.067] | 0.78 | 122.51 R |
 | **All Candidates (Ungated)** | VALID (2020-2021) | 343 | 39.7% | +0.115 R | [-0.039, +0.269] | 1.18 | 21.41 R |
 | **Trial E1 (Stop >= 1.0 ATR)** | VALID (2020-2021) | 342 | 39.8% | +0.119 R | [-0.033, +0.272] | 1.20 | 21.38 R |
 | **Trial E2 (E1 + 16-Bar Time Stop)** | VALID (2020-2021) | 342 | 47.1% | +0.003 R | [-0.096, +0.104] | 1.01 | 17.07 R |
