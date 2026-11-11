@@ -23,5 +23,5 @@
 *Shuffled-label validation: 0 trades taken, 0.000 R expectancy (verified 0 feature leakage).*
 
 ## Current Status & Next Steps
-- **Status**: Reorganization complete on branch `reorg`. `verify.py` passes hash lock. SL-bucket diagnostic logged in `research/experiments.csv`. Streamlit honesty pass and documentation complete.
-- **Next Step**: Await user directive. TEST split (2022+) remains strictly locked and unrun.
+- **Status**: Pre-registration harness hardened (one-shot exit lock, locked constant P=0.6077%, secondary benchmark decoupled from verdict). All 11 unit tests pass (`test_dst.py` included); `verify.py` passes hash lock. Tag `prereg-v2` created.
+- **Next Step**: Await user directive on sample size threshold N. TEST split (2022+) remains strictly locked and unrun.

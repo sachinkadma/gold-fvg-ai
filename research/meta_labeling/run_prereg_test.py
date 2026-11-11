@@ -3,6 +3,8 @@ Pre-Registered Out-of-Sample Evaluation Engine for XAUUSD 15m ICT Strategy.
 Enforces strict anti-overfitting protocol:
 - Combined dry-run mode (2015-2021) for verification.
 - TEST split (2022+) execution strictly locked behind the --final flag.
+- One-shot execution enforced: halts with exit code 2 if a log entry already exists.
+- Parameter constants locked against tampering: --p-scaled must equal 0.6077.
 - Decision rule: PASS / FAIL / INCONCLUSIVE.
 - Persistent audit logging to test_runs.log.
 """
@@ -20,17 +22,22 @@ REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
-from core import config
 from core.data_loader import load_and_clean_data
-from core.signals import is_in_killzone
 from research.meta_labeling.pipeline_metalabeling import generate_candidates_and_features
 
 PREREG_DOC_PATH = os.path.join(REPO_ROOT, "research", "PREREG_TEST.md")
-LOG_PATH = os.path.join(REPO_ROOT, "test_runs.log")
+DEFAULT_LOG_PATH = os.path.join(REPO_ROOT, "test_runs.log")
 DATA_PATH = os.path.join(REPO_ROOT, "data", "xauusd_15m_long.csv")
 CANDIDATES_CACHE_PATH = os.path.join(REPO_ROOT, "data", "candidates.parquet")
 
-DEFAULT_P_SCALED = 0.6077  # 8.0 / 1316.4990 * 100%
+# LOCKED STRATEGY & RISK CONSTANTS (PRIMARY HYPOTHESIS)
+P_SCALED = 0.6077  # 8.0 / 1316.4990 * 100%
+RR = 2.0
+SPREAD = 0.35
+SLIPPAGE = 0.10
+COMMISSION_PER_LOT = 7.0
+ORDER_EXPIRY_BARS = 8
+KILLZONES = "LONDON_0200_0500_NY_AM_0700_1000"
 
 
 def get_file_sha256(filepath):
@@ -51,16 +58,17 @@ def get_git_commit():
         return "UNKNOWN"
 
 
-def compute_parameters_hash(p_scaled):
+def compute_parameters_hash():
+    """Computes parameters hash strictly from locked constants."""
     param_str = (
         f"STRATEGY=ICT_CAUSAL_SWEEP_FVG;"
-        f"KILLZONES=LONDON_0200_0500_NY_AM_0700_1000;"
-        f"P_SCALED={p_scaled:.4f};"
-        f"RR=2.0;"
-        f"SPREAD={config.SPREAD};"
-        f"SLIPPAGE={config.SLIPPAGE};"
-        f"COMMISSION={config.COMMISSION_PER_LOT};"
-        f"ORDER_EXPIRY={config.ORDER_EXPIRY_BARS};"
+        f"KILLZONES={KILLZONES};"
+        f"P_SCALED={P_SCALED:.4f};"
+        f"RR={RR:.1f};"
+        f"SPREAD={SPREAD};"
+        f"SLIPPAGE={SLIPPAGE};"
+        f"COMMISSION={COMMISSION_PER_LOT};"
+        f"ORDER_EXPIRY={ORDER_EXPIRY_BARS};"
         f"COLLISION=SL_FIRST"
     )
     return hashlib.sha256(param_str.encode("utf-8")).hexdigest()[:16]
@@ -88,7 +96,7 @@ def block_bootstrap_ci(r_vals, month_periods, n_resamples=2000, seed=42):
     return round(ci_lower, 3), round(ci_upper, 3)
 
 
-def evaluate_setups(df_cand, p_scaled=DEFAULT_P_SCALED):
+def evaluate_setups(df_cand):
     """
     Evaluates filled candidates under:
     1. Primary Model: Killzone Only (London & NY AM) + Stop >= P% of close
@@ -102,8 +110,8 @@ def evaluate_setups(df_cand, p_scaled=DEFAULT_P_SCALED):
     df_filled["stop_pct"] = (df_filled["stop_dist"] / df_filled["close"]) * 100.0
     df_filled["month_period"] = pd.to_datetime(df_filled["signal_time"]).dt.tz_localize(None).dt.to_period("M")
 
-    # 1. Primary Model Filter: Killzone (killzone > 0) AND stop_pct >= p_scaled
-    f_primary = (df_filled["killzone"] > 0) & (df_filled["stop_pct"] >= p_scaled)
+    # 1. Primary Model Filter: Killzone (killzone > 0) AND stop_pct >= P_SCALED
+    f_primary = (df_filled["killzone"] > 0) & (df_filled["stop_pct"] >= P_SCALED)
     primary_trades = df_filled[f_primary].copy()
 
     # 2. Secondary Benchmark: Killzone AND stop_dist >= 8.0 pts
@@ -141,14 +149,14 @@ def evaluate_setups(df_cand, p_scaled=DEFAULT_P_SCALED):
     return summarize(primary_trades), summarize(secondary_trades)
 
 
-def run_combined_dry_run(p_scaled=DEFAULT_P_SCALED):
+def run_combined_dry_run():
     """
     Executes dry run on COMBINED in-sample / validation data (2015-2021).
     Must reproduce Trial 23 byte-for-byte.
     """
     print("=" * 70)
     print(f"PRE-REGISTRATION DRY-RUN: COMBINED SET (2015–2021)")
-    print(f"Primary Rule: Killzone Only (02-05, 07-10 NY) + Stop >= {p_scaled:.4f}% of close")
+    print(f"Primary Rule: Killzone Only (02-05, 07-10 NY) + Stop >= {P_SCALED:.4f}% of close")
     print("=" * 70)
 
     if not os.path.exists(CANDIDATES_CACHE_PATH):
@@ -163,7 +171,7 @@ def run_combined_dry_run(p_scaled=DEFAULT_P_SCALED):
     # Filter to 2015-2021
     df_cand_comb = df_cand[(df_cand["year"] >= 2015) & (df_cand["year"] <= 2021)].copy()
 
-    primary_res, secondary_res = evaluate_setups(df_cand_comb, p_scaled=p_scaled)
+    primary_res, secondary_res = evaluate_setups(df_cand_comb)
 
     print(f"\n[PRIMARY MODEL RESULTS (Trial 23 Benchmark)]")
     print(f"  Executed Trades (N) : {primary_res['n_trades']}")
@@ -199,10 +207,10 @@ def run_combined_dry_run(p_scaled=DEFAULT_P_SCALED):
         return False
 
 
-def run_test_evaluation(p_scaled=DEFAULT_P_SCALED, is_final=False):
+def run_test_evaluation(log_path, is_final=False):
     """
     Executes one-shot evaluation on the locked TEST set (2022-01-01 to latest).
-    Strictly guarded behind the --final flag.
+    Strictly guarded behind the --final flag and one-shot enforcement.
     """
     if not is_final:
         print("\n" + "!" * 70)
@@ -212,12 +220,25 @@ def run_test_evaluation(p_scaled=DEFAULT_P_SCALED, is_final=False):
         print("!" * 70 + "\n")
         sys.exit(1)
 
+    # 1. ONE-SHOT LOCK CHECK BEFORE LOADING ANY DATA
+    if os.path.exists(log_path):
+        with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
+            existing_content = f.read().strip()
+        if len(existing_content) > 0:
+            print("\n" + "!" * 70)
+            print("ONE-SHOT VIOLATION: Prior TEST evaluation already logged in:")
+            print(f"  {log_path}")
+            print("The pre-registered protocol permits exactly ONE evaluation on the TEST partition.")
+            print("All further executions are strictly aborted.")
+            print("!" * 70 + "\n")
+            sys.exit(2)
+
     print("=" * 70)
     print("ONE-SHOT TEST EVALUATION (2022-01-01 TO LATEST)")
     print(f"Timestamp (UTC): {datetime.now(timezone.utc).isoformat()}")
     print("=" * 70)
 
-    # 1. Load data with warmup
+    # 2. Load data with warmup
     print("[DATA] Loading historical data for TEST split...")
     df_all = load_and_clean_data(DATA_PATH, data_tz="UTC", verbose=False)
 
@@ -225,7 +246,7 @@ def run_test_evaluation(p_scaled=DEFAULT_P_SCALED, is_final=False):
     df_test_full = df_all.loc["2021-12-01":].copy()
     print(f"[DATA] Total candles loaded (including Dec 2021 warmup): {len(df_test_full):,}")
 
-    # 2. Generate TEST candidates dynamically
+    # 3. Generate TEST candidates dynamically
     print("[CANDIDATE GENERATION] Generating causal setups on out-of-sample data...")
     test_candidates = generate_candidates_and_features(df_test_full)
 
@@ -241,8 +262,8 @@ def run_test_evaluation(p_scaled=DEFAULT_P_SCALED, is_final=False):
     df_cand_test = df_cand_test[pd.to_datetime(df_cand_test["signal_time"]) >= "2022-01-01"].copy()
     print(f"[CANDIDATE GENERATION] Out-of-sample candidate pool: {len(df_cand_test):,} candidates.")
 
-    # 3. Evaluate setups
-    primary_res, secondary_res = evaluate_setups(df_cand_test, p_scaled=p_scaled)
+    # 4. Evaluate setups
+    primary_res, secondary_res = evaluate_setups(df_cand_test)
 
     n_test = primary_res["n_trades"]
     exp_test = primary_res["expectancy_r"]
@@ -250,7 +271,7 @@ def run_test_evaluation(p_scaled=DEFAULT_P_SCALED, is_final=False):
     wr_test = primary_res["win_rate_pct"]
     tot_test = primary_res["total_r"]
 
-    # 4. Apply Decision Rule
+    # 5. Apply Decision Rule
     # PASS: N >= 60 AND exp > 0 AND ci_lower > 0
     # FAIL: exp <= 0 (N >= 30)
     # INCONCLUSIVE: everything else (exp > 0 but CI includes 0, or N < 60)
@@ -265,14 +286,14 @@ def run_test_evaluation(p_scaled=DEFAULT_P_SCALED, is_final=False):
         if n_test < 60:
             verdict_detail = f"Sample underpowered (N={n_test} < 60 required). Forward paper-trading required."
         else:
-            verdict_detail = f"Positive expectancy observed ({exp_test:+.3f}R), but 95% CI [{ci_lower:+.3f}, {ci_upper:+.3f}] spans zero."
+            verdict_detail = f"Positive expectancy observed ({exp_test:+.3f}R), but 95% CI [{ci_lower:+.3f}, {ci_upper:+.3f}] spans zero. Forward paper-trading required."
 
     # Print Report
     print("\n" + "=" * 70)
     print(f"OFFICIAL TEST OUTCOME: {verdict}")
     print(f"Detail: {verdict_detail}")
     print("=" * 70)
-    print(f"  Primary Model (P = {p_scaled:.4f}%):")
+    print(f"  Primary Model (P = {P_SCALED:.4f}%):")
     print(f"    Executed Trades (N) : {n_test}")
     print(f"    Win Rate            : {wr_test:.1f}%")
     print(f"    Net Expectancy      : {exp_test:+.3f} R")
@@ -288,9 +309,9 @@ def run_test_evaluation(p_scaled=DEFAULT_P_SCALED, is_final=False):
     print(f"    Monthly-Block 95% CI: [{secondary_res['ci_95'][0]:+.3f} R, {secondary_res['ci_95'][1]:+.3f} R]")
     print("=" * 70 + "\n")
 
-    # 5. Log run to test_runs.log
+    # 6. Log run to test_runs.log
     commit_hash = get_git_commit()
-    param_hash = compute_parameters_hash(p_scaled)
+    param_hash = compute_parameters_hash()
     prereg_hash = get_file_sha256(PREREG_DOC_PATH)
     timestamp_utc = datetime.now(timezone.utc).isoformat()
 
@@ -301,26 +322,34 @@ def run_test_evaluation(p_scaled=DEFAULT_P_SCALED, is_final=False):
         f"DETAIL={verdict_detail}\n"
     )
 
-    with open(LOG_PATH, "a", encoding="utf-8") as f:
+    with open(log_path, "a", encoding="utf-8") as f:
         f.write(log_entry)
 
-    print(f"[AUDIT] Run recorded to {LOG_PATH}.")
+    print(f"[AUDIT] Run recorded to {log_path}.")
     print("=" * 70 + "\n")
 
 
 def main():
     parser = argparse.ArgumentParser(description="Pre-Registered Out-of-Sample Evaluation Engine")
     parser.add_argument("--split", choices=["combined", "test"], default="combined", help="Data partition to evaluate")
-    parser.add_argument("--p-scaled", type=float, default=DEFAULT_P_SCALED, help="Scaled stop floor percent (default 0.6077)")
+    parser.add_argument("--p-scaled", type=float, default=P_SCALED, help=f"Scaled stop floor percent (locked to {P_SCALED})")
     parser.add_argument("--final", action="store_true", help="Explicit authorization flag required for TEST split")
+    parser.add_argument("--log-path", default=None, help="Custom log path (for verification testing)")
 
     args = parser.parse_args()
 
+    # Parameter lock enforcement
+    if args.p_scaled is not None and abs(args.p_scaled - P_SCALED) > 1e-6:
+        print(f"ERROR: Parameter tampering detected. --p-scaled must equal locked constant {P_SCALED} (got {args.p_scaled}).")
+        sys.exit(1)
+
+    log_path = args.log_path or os.environ.get("TEST_RUNS_LOG", DEFAULT_LOG_PATH)
+
     if args.split == "combined":
-        success = run_combined_dry_run(p_scaled=args.p_scaled)
+        success = run_combined_dry_run()
         sys.exit(0 if success else 1)
     elif args.split == "test":
-        run_test_evaluation(p_scaled=args.p_scaled, is_final=args.final)
+        run_test_evaluation(log_path=log_path, is_final=args.final)
 
 
 if __name__ == "__main__":

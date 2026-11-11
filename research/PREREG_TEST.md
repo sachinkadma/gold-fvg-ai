@@ -79,7 +79,7 @@ Must meet all three conditions:
 - **Fixed Floor Hypothesis (`SL >= 8.0 pts`)**:
   - Killzone-only fixed 8.0-point floor will be evaluated concurrently.
   - Results will be reported for comparison to determine whether fixed dollar stops degrade under $2,000–$2,800 Gold spot prices.
-  - **Notice**: The fixed 8.0-point model is strictly informational and does **not** govern the PASS / FAIL / INCONCLUSIVE gate.
+  - **Notice**: The fixed 8.0-point model is strictly informational and does **not** govern the PASS / FAIL / INCONCLUSIVE gate. The secondary benchmark (fixed stop >= 8.0 price units) is informational only. It must never change, soften, or override the verdict from the primary rule, in any outcome.
 
 ---
 
