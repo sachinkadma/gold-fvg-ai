@@ -23,5 +23,5 @@
 *Shuffled-label validation: 0 trades taken, 0.000 R expectancy (verified 0 feature leakage).*
 
 ## Current Status & Next Steps
-- **Status**: Pre-registration harness hardened (one-shot exit lock, locked constant P=0.6077%, secondary benchmark decoupled from verdict). All 11 unit tests pass (`test_dst.py` included); `verify.py` passes hash lock. Tag `prereg-v2` created.
+- **Status**: Pre-registration protocol updated to v3 (PREREG_TEST.md SHA256: cb04fa41...): adds formalized forward paper-trading stage for INCONCLUSIVE outcome and closes post-hoc loopholes. All 11 unit tests pass; verify.py passes hash lock. Tag prereg-v3 created.
 - **Next Step**: Await user directive on sample size threshold N. TEST split (2022+) remains strictly locked and unrun.

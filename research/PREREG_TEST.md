@@ -80,10 +80,24 @@ Must meet all three conditions:
   - Killzone-only fixed 8.0-point floor will be evaluated concurrently.
   - Results will be reported for comparison to determine whether fixed dollar stops degrade under $2,000–$2,800 Gold spot prices.
   - **Notice**: The fixed 8.0-point model is strictly informational and does **not** govern the PASS / FAIL / INCONCLUSIVE gate. The secondary benchmark (fixed stop >= 8.0 price units) is informational only. It must never change, soften, or override the verdict from the primary rule, in any outcome.
+  - If TEST verdict = FAIL or INCONCLUSIVE, the secondary benchmark and any post-hoc variants may not be used to reopen or reinterpret the verdict.
 
 ---
 
-## 5. Execution Command
+## 5. Forward Paper-Trading Stage (only if TEST verdict = INCONCLUSIVE)
+
+- Rule is frozen: killzone + stop >= 0.6077% of signal close + RR 2.0 + standard costs. No parameter, filter or session changes during the forward stage.
+- Start date = the day after the TEST run is logged in test_runs.log. Fills and costs are simulated with the same cost model. Each trade is logged with timestamp, entry, SL, TP, outcome in R.
+- End condition: N_forward = 40 executed trades OR 24 months, whichever comes first.
+- Forward verdict at the end:
+  - PASS_FWD: N >= 30 AND net expectancy > 0 AND monthly-block 95% CI lower bound > 0
+  - FAIL_FWD: net expectancy <= 0 (N >= 20)
+  - Anything else (including N < 30): strategy research is CLOSED as INCONCLUSIVE-FINAL. No further extension.
+- PASS_FWD does not authorize live money. It only permits a separate, new written decision.
+
+---
+
+## 6. Execution Command
 
 When authorized by the user, the single out-of-sample evaluation must be executed via:
 
