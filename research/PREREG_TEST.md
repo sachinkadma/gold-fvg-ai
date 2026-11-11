@@ -87,13 +87,13 @@ Must meet all three conditions:
 ## 5. Forward Paper-Trading Stage (only if TEST verdict = INCONCLUSIVE)
 
 - Rule is frozen: killzone + stop >= 0.6077% of signal close + RR 2.0 + standard costs. No parameter, filter or session changes during the forward stage.
-- Start date = the day after the TEST run is logged in test_runs.log. Fills and costs are simulated with the same cost model. Each trade is logged with timestamp, entry, SL, TP, outcome in R.
-- End condition: N_forward = 40 executed trades OR 24 months, whichever comes first.
-- Forward verdict at the end:
-  - PASS_FWD: N >= 30 AND net expectancy > 0 AND monthly-block 95% CI lower bound > 0
-  - FAIL_FWD: net expectancy <= 0 (N >= 20)
-  - Anything else (including N < 30): strategy research is CLOSED as INCONCLUSIVE-FINAL. No further extension.
-- PASS_FWD does not authorize live money. It only permits a separate, new written decision.
+- Start date = the day after the TEST run is logged in test_runs.log. Fills and costs are simulated with the same cost model. Each trade is logged with timestamp, entry, SL, TP, outcome in R. Every signal must be logged, no skipping.
+- End condition: N_forward = 20 executed trades OR 30 months, whichever comes first.
+- Forward verdict:
+  - FAIL_FWD: N >= 12 AND net expectancy <= 0, evaluated only at N=12 and at end.
+  - PASS_FWD: N >= 20 AND net expectancy > 0 AND monthly-block 95% CI lower bound > 0.
+  - Anything else (including N < 20 at 30 months): strategy research is CLOSED as INCONCLUSIVE-FINAL. No further extension.
+- Operational context: Expected N ≈ 17-20; PASS_FWD needs roughly +0.65R; INCONCLUSIVE-FINAL / FAIL_FWD most likely. PASS_FWD does not authorize live money.
 
 ---
 

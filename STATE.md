@@ -23,5 +23,5 @@
 *Shuffled-label validation: 0 trades taken, 0.000 R expectancy (verified 0 feature leakage).*
 
 ## Current Status & Next Steps
-- **Status**: Pre-registration protocol updated to v3 (PREREG_TEST.md SHA256: cb04fa41...): adds formalized forward paper-trading stage for INCONCLUSIVE outcome and closes post-hoc loopholes. All 11 unit tests pass; verify.py passes hash lock. Tag prereg-v3 created.
+- **Status**: Pre-registration protocol updated to v4 (PREREG_TEST.md SHA256: 6aca6d3c...): recalibrates forward paper-trading stage (N_forward=20 / 30 months, early fail at N=12) and logging rigor. All 11 unit tests pass; verify.py passes hash lock. Tag prereg-v4 created.
 - **Next Step**: Await user directive on sample size threshold N. TEST split (2022+) remains strictly locked and unrun.
