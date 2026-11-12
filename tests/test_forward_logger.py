@@ -35,6 +35,7 @@ if REPO_ROOT not in sys.path:
 from core.data_loader import load_and_clean_data
 from core.backtester import run_backtest_simulation
 from core.signals import evaluate_causal_signal_at_bar
+from research.meta_labeling.pipeline_metalabeling import simulate_candidate_forward
 from forward.logger import (
     ForwardSignalLogger,
     verify_chain,
@@ -42,9 +43,12 @@ from forward.logger import (
     convert_mt5_time_to_utc,
     save_external_anchor,
     load_external_anchors,
+    push_external_anchor_to_git,
     replay_dry_run,
     GENESIS_PREV_HASH,
-    FROZEN_FILE_HASHES
+    FROZEN_FILE_HASHES,
+    MIN_BUFFER_WARMUP,
+    FORWARD_GIT_TAG
 )
 
 
@@ -164,6 +168,8 @@ def test_genesis_record_structure(tmp_path):
     assert rec0["event"] == "GENESIS"
     assert rec0["data"]["p_scaled"] == 0.6077
     assert rec0["data"]["rr_target"] == 2.0
+    assert rec0["data"]["git_tag"] == FORWARD_GIT_TAG
+    assert "git_commit" in rec0["data"]
 
 
 def test_preflight_frozen_hashes_enforcement(tmp_path):
@@ -429,6 +435,89 @@ def test_rolling_buffer_parity_against_full_history(train_data):
     assert full_signals == buf_signals, "Rolling buffer signals diverged from full-history signals!"
 
 
+def test_buffer_135_parity_vs_full_history(train_data):
+    """
+    CONFIRMATION TEST 2B:
+    Tightest boundary test: exactly 135-bar rolling buffer (theoretical safe floor)
+    vs full-history causal signal generation on 1,500 candles.
+    Signals must match 100.00% identically with zero divergence.
+    """
+    df_slice = train_data.iloc[5000:6500].copy()  # 1500 candles mid-dataset
+    full_signals = {}
+    buf_signals = {}
+
+    # 1. Full-history ground truth
+    for t in range(135, len(df_slice)):
+        s_full = evaluate_causal_signal_at_bar(df_slice, t, killzone_gate=False)
+        if s_full is not None:
+            full_signals[t] = (
+                s_full["direction"], s_full["entry"], s_full["sl"], s_full["tp"], s_full["risk_dist"]
+            )
+
+    # 2. Rolling buffer of exactly 135 bars
+    for t in range(135, len(df_slice)):
+        start_idx = t - 134  # exactly 135 bars in window [start_idx : t + 1]
+        df_buf = df_slice.iloc[start_idx : t + 1]
+        assert len(df_buf) == 135
+        s_buf = evaluate_causal_signal_at_bar(df_buf, len(df_buf) - 1, killzone_gate=False)
+        if s_buf is not None:
+            buf_signals[t] = (
+                s_buf["direction"], s_buf["entry"], s_buf["sl"], s_buf["tp"], s_buf["risk_dist"]
+            )
+
+    assert len(full_signals) > 0
+    assert full_signals == buf_signals, "135-bar buffer signals diverged from full-history signals!"
+
+
+def test_buffer_warmup_no_signal_emission_below_135(train_data, tmp_path):
+    """
+    CONFIRMATION TEST 2C:
+    Verifies that while buffer has fewer than 135 bars (warm-up phase),
+    NO signals are emitted, and the logger remains strictly silent.
+    Signals only evaluate once candle #135 arrives.
+    """
+    df_slice = train_data.iloc[100:250].copy()
+    log_file = str(tmp_path / "warmup_logger.jsonl")
+
+    logger = ForwardSignalLogger(
+        log_path=log_file,
+        check_git=False,
+        check_frozen_hashes=False,
+        min_buffer_warmup=135,
+        buffer_size=135,
+        killzone_gate=False,
+        skip_outside_kz_eval=False
+    )
+
+    times = df_slice.index
+    opens = df_slice["open"].values
+    highs = df_slice["high"].values
+    lows = df_slice["low"].values
+    closes = df_slice["close"].values
+    vols = df_slice["volume"].values if "volume" in df_slice.columns else [0] * len(df_slice)
+
+    # Feed first 134 candles (< 135 warmup threshold)
+    for i in range(134):
+        logger.on_candle_closed({
+            "time": times[i], "open": opens[i], "high": highs[i], "low": lows[i], "close": closes[i], "volume": vols[i]
+        })
+
+    assert len(logger._times_ny) == 134
+    assert logger.signal_counter == 0
+
+    with open(log_file, "r", encoding="utf-8") as f:
+        events = [json.loads(line) for line in f if line.strip()]
+
+    # Zero SIGNAL events should be emitted during warmup (< 135 bars)
+    assert [e for e in events if e["event"] == "SIGNAL"] == []
+
+    # Feed 135th candle -> warmup complete
+    logger.on_candle_closed({
+        "time": times[134], "open": opens[134], "high": highs[134], "low": lows[134], "close": closes[134], "volume": vols[134]
+    })
+    assert len(logger._times_ny) == 135
+
+
 def test_mt5_time_conversion_us_vs_eu_dst():
     """
     CONFIRMATION TEST 6:
@@ -485,7 +574,8 @@ def test_logger_fills_vs_backtester_train_slice(train_data, tmp_path):
         killzone_gate=True,
         p_scaled_filter=False,
         killzone_expiry=True,
-        skip_outside_kz_eval=True
+        skip_outside_kz_eval=True,
+        min_buffer_warmup=35
     )
 
     times = df_slice.index
@@ -504,11 +594,13 @@ def test_logger_fills_vs_backtester_train_slice(train_data, tmp_path):
         events = [json.loads(line) for line in f if line.strip()]
 
     closes = [e for e in events if e["event"] == "CLOSE"]
+    signals_by_id = {e["data"]["signal_id"]: e for e in events if e["event"] == "SIGNAL"}
     assert len(closes) == len(bt_trades) == 13
 
     for i in range(len(bt_trades)):
         bt_t = bt_trades.iloc[i]
         cl_e = closes[i]["data"]
+        sig_evt = signals_by_id[cl_e["signal_id"]]
 
         assert cl_e["direction"] == bt_t["direction"]
         assert abs(cl_e["entry_price"] - bt_t["entry_price"]) < 0.01
@@ -518,10 +610,23 @@ def test_logger_fills_vs_backtester_train_slice(train_data, tmp_path):
         elif "TP" in bt_t["exit_reason"]:
             assert "TP" in cl_e["exit_reason"]
 
-        # Exact pipeline_metalabeling net_r check (tolerance = 0.000)
-        pnl = (cl_e["exit_price"] - cl_e["entry_price"]) if cl_e["direction"] == "BUY" else (cl_e["entry_price"] - cl_e["exit_price"])
-        expected_net_r = round((pnl / cl_e["planned_risk_dist"]) - (7.0 / (100.0 * cl_e["planned_risk_dist"])), 3)
-        assert cl_e["net_r"] == expected_net_r
+        # Call real pipeline_metalabeling code path directly
+        sig_dt = pd.Timestamp(sig_evt["data"]["timestamp_ny"])
+        bar_idx = train_data.index.get_loc(sig_dt)
+        pm_outcome = simulate_candidate_forward(
+            df=train_data,
+            sig_bar=bar_idx,
+            direction=sig_evt["data"]["direction"],
+            entry=sig_evt["data"]["entry"],
+            sl=sig_evt["data"]["sl"],
+            risk_dist=sig_evt["data"]["risk_dist"]
+        )
+        assert pm_outcome["filled"] is True
+        assert cl_e["net_r"] == pm_outcome["net_r_20"]
+        if "SL" in cl_e["exit_reason"]:
+            assert "SL" in pm_outcome["exit_reason_20"]
+        elif "TP" in cl_e["exit_reason"]:
+            assert "TP" in pm_outcome["exit_reason_20"]
 
 
 def test_logger_parity_dst_spring_slice(train_data, tmp_path):
@@ -543,7 +648,8 @@ def test_logger_parity_dst_spring_slice(train_data, tmp_path):
         killzone_gate=True,
         p_scaled_filter=False,
         killzone_expiry=True,
-        skip_outside_kz_eval=True
+        skip_outside_kz_eval=True,
+        min_buffer_warmup=35
     )
 
     times = df_slice.index
@@ -562,19 +668,31 @@ def test_logger_parity_dst_spring_slice(train_data, tmp_path):
         events = [json.loads(line) for line in f if line.strip()]
 
     closes = [e for e in events if e["event"] == "CLOSE"]
+    signals_by_id = {e["data"]["signal_id"]: e for e in events if e["event"] == "SIGNAL"}
     assert len(closes) == len(bt_trades) == 9
 
     for i in range(len(bt_trades)):
         bt_t = bt_trades.iloc[i]
         cl_e = closes[i]["data"]
+        sig_evt = signals_by_id[cl_e["signal_id"]]
 
         assert cl_e["direction"] == bt_t["direction"]
         assert abs(cl_e["entry_price"] - bt_t["entry_price"]) < 0.01
         assert abs(cl_e["exit_price"] - bt_t["exit_price"]) < 0.01
 
-        pnl = (cl_e["exit_price"] - cl_e["entry_price"]) if cl_e["direction"] == "BUY" else (cl_e["entry_price"] - cl_e["exit_price"])
-        expected_net_r = round((pnl / cl_e["planned_risk_dist"]) - (7.0 / (100.0 * cl_e["planned_risk_dist"])), 3)
-        assert cl_e["net_r"] == expected_net_r
+        # Call real pipeline_metalabeling code path directly
+        sig_dt = pd.Timestamp(sig_evt["data"]["timestamp_ny"])
+        bar_idx = train_data.index.get_loc(sig_dt)
+        pm_outcome = simulate_candidate_forward(
+            df=train_data,
+            sig_bar=bar_idx,
+            direction=sig_evt["data"]["direction"],
+            entry=sig_evt["data"]["entry"],
+            sl=sig_evt["data"]["sl"],
+            risk_dist=sig_evt["data"]["risk_dist"]
+        )
+        assert pm_outcome["filled"] is True
+        assert cl_e["net_r"] == pm_outcome["net_r_20"]
 
 
 def test_logger_parity_november_fallback_dst_slice(train_data, tmp_path):
@@ -596,7 +714,8 @@ def test_logger_parity_november_fallback_dst_slice(train_data, tmp_path):
         killzone_gate=True,
         p_scaled_filter=False,
         killzone_expiry=True,
-        skip_outside_kz_eval=True
+        skip_outside_kz_eval=True,
+        min_buffer_warmup=35
     )
 
     times = df_slice.index
@@ -615,19 +734,31 @@ def test_logger_parity_november_fallback_dst_slice(train_data, tmp_path):
         events = [json.loads(line) for line in f if line.strip()]
 
     closes = [e for e in events if e["event"] == "CLOSE"]
+    signals_by_id = {e["data"]["signal_id"]: e for e in events if e["event"] == "SIGNAL"}
     assert len(closes) == len(bt_trades) == 4
 
     for i in range(len(bt_trades)):
         bt_t = bt_trades.iloc[i]
         cl_e = closes[i]["data"]
+        sig_evt = signals_by_id[cl_e["signal_id"]]
 
         assert cl_e["direction"] == bt_t["direction"]
         assert abs(cl_e["entry_price"] - bt_t["entry_price"]) < 0.01
         assert abs(cl_e["exit_price"] - bt_t["exit_price"]) < 0.01
 
-        pnl = (cl_e["exit_price"] - cl_e["entry_price"]) if cl_e["direction"] == "BUY" else (cl_e["entry_price"] - cl_e["exit_price"])
-        expected_net_r = round((pnl / cl_e["planned_risk_dist"]) - (7.0 / (100.0 * cl_e["planned_risk_dist"])), 3)
-        assert cl_e["net_r"] == expected_net_r
+        # Call real pipeline_metalabeling code path directly
+        sig_dt = pd.Timestamp(sig_evt["data"]["timestamp_ny"])
+        bar_idx = train_data.index.get_loc(sig_dt)
+        pm_outcome = simulate_candidate_forward(
+            df=train_data,
+            sig_bar=bar_idx,
+            direction=sig_evt["data"]["direction"],
+            entry=sig_evt["data"]["entry"],
+            sl=sig_evt["data"]["sl"],
+            risk_dist=sig_evt["data"]["risk_dist"]
+        )
+        assert pm_outcome["filled"] is True
+        assert cl_e["net_r"] == pm_outcome["net_r_20"]
 
 
 def test_logger_parity_valid_period_slice(train_data, tmp_path):
@@ -649,7 +780,8 @@ def test_logger_parity_valid_period_slice(train_data, tmp_path):
         killzone_gate=True,
         p_scaled_filter=False,
         killzone_expiry=True,
-        skip_outside_kz_eval=True
+        skip_outside_kz_eval=True,
+        min_buffer_warmup=35
     )
 
     times = df_slice.index
@@ -668,19 +800,31 @@ def test_logger_parity_valid_period_slice(train_data, tmp_path):
         events = [json.loads(line) for line in f if line.strip()]
 
     closes = [e for e in events if e["event"] == "CLOSE"]
+    signals_by_id = {e["data"]["signal_id"]: e for e in events if e["event"] == "SIGNAL"}
     assert len(closes) == len(bt_trades) == 25
 
     for i in range(len(bt_trades)):
         bt_t = bt_trades.iloc[i]
         cl_e = closes[i]["data"]
+        sig_evt = signals_by_id[cl_e["signal_id"]]
 
         assert cl_e["direction"] == bt_t["direction"]
         assert abs(cl_e["entry_price"] - bt_t["entry_price"]) < 0.01
         assert abs(cl_e["exit_price"] - bt_t["exit_price"]) < 0.01
 
-        pnl = (cl_e["exit_price"] - cl_e["entry_price"]) if cl_e["direction"] == "BUY" else (cl_e["entry_price"] - cl_e["exit_price"])
-        expected_net_r = round((pnl / cl_e["planned_risk_dist"]) - (7.0 / (100.0 * cl_e["planned_risk_dist"])), 3)
-        assert cl_e["net_r"] == expected_net_r
+        # Call real pipeline_metalabeling code path directly
+        sig_dt = pd.Timestamp(sig_evt["data"]["timestamp_ny"])
+        bar_idx = train_data.index.get_loc(sig_dt)
+        pm_outcome = simulate_candidate_forward(
+            df=train_data,
+            sig_bar=bar_idx,
+            direction=sig_evt["data"]["direction"],
+            entry=sig_evt["data"]["entry"],
+            sl=sig_evt["data"]["sl"],
+            risk_dist=sig_evt["data"]["risk_dist"]
+        )
+        assert pm_outcome["filled"] is True
+        assert cl_e["net_r"] == pm_outcome["net_r_20"]
 
 
 def test_dry_run_replay(train_data, tmp_path):

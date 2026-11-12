@@ -48,6 +48,8 @@ SPREAD_ASSUMED = 0.35
 SLIPPAGE_ASSUMED = 0.10
 COMMISSION_PER_LOT = 7.0
 ORDER_EXPIRY_BARS = 8
+MIN_BUFFER_WARMUP = 135
+FORWARD_GIT_TAG = "forward-v1"
 GENESIS_PREV_HASH = "0" * 64
 
 # FROZEN FILE SHA256 HASHES FOR PRE-FLIGHT INTEGRITY
@@ -155,8 +157,14 @@ def verify_chain(log_path):
 def verify_against_anchor(log_path, anchored_hashes):
     """
     Verifies log file integrity against externally anchored hashes.
-    anchored_hashes: list of (index, event_type, hash) or (index, hash) or list of hashes.
+    anchored_hashes can be:
+      - Path to external anchor JSON ledger file (str) (e.g., pulled from git remote)
+      - List of anchor dicts [{'index': 0, 'record_hash': '...'}, ...]
+      - List of tuples [(index, hash), ...] or [(index, event, hash), ...]
+      - List of raw hash strings [hash0, hash1, ...]
 
+    Reads anchors from the specified independent external source and verifies
+    that every anchored checkpoint matches the append-only log exactly.
     Detects:
     1. Internal hash chain tamper or corruption.
     2. Log truncation (e.g. attacker deleted recent records to hide losses).
@@ -168,16 +176,24 @@ def verify_against_anchor(log_path, anchored_hashes):
     if not chain_valid:
         return False, f"CHAIN_INVALID: {chain_msg}", count
 
+    if isinstance(anchored_hashes, str):
+        anchored_hashes = load_external_anchors(anchored_hashes)
+
     if not anchored_hashes:
         return True, "CHAIN_VALID_NO_ANCHORS", count
 
     # Parse anchor dictionary: index -> expected_hash
     anchor_dict = {}
     for item in anchored_hashes:
-        if isinstance(item, (tuple, list)):
+        if isinstance(item, dict):
+            idx = item.get("index")
+            h = item.get("record_hash")
+            if idx is not None and h:
+                anchor_dict[int(idx)] = h
+        elif isinstance(item, (tuple, list)):
             idx = item[0]
             h = item[-1]
-            anchor_dict[idx] = h
+            anchor_dict[int(idx)] = h
         else:
             anchor_dict[len(anchor_dict)] = item
 
@@ -234,10 +250,46 @@ def convert_mt5_time_to_utc(server_time, server_tz="US_EET"):
         return ts_ny_aware.tz_convert("UTC")
 
 
-def save_external_anchor(anchor_path, record_index, event_type, record_hash):
+def push_external_anchor_to_git(anchor_path, remote="origin", branch=None):
+    """
+    Commits the external anchor ledger and pushes it to git remote.
+    Returns: (success: bool, msg: str)
+    """
+    try:
+        abs_path = os.path.abspath(anchor_path)
+        if not os.path.exists(abs_path):
+            return False, f"Anchor file does not exist: {abs_path}"
+        rel_path = os.path.relpath(abs_path, REPO_ROOT)
+
+        # Stage the anchor file
+        add_res = subprocess.run(["git", "add", rel_path], capture_output=True, text=True, cwd=REPO_ROOT)
+        if add_res.returncode != 0:
+            return False, f"git add failed: {add_res.stderr.strip()}"
+
+        # Check if there are changes staged
+        diff_res = subprocess.run(["git", "diff", "--cached", "--quiet"], capture_output=True, cwd=REPO_ROOT)
+        if diff_res.returncode != 0:
+            commit_msg = f"chore(anchor): external anchor checkpoint {datetime.now(timezone.utc).isoformat()}"
+            commit_res = subprocess.run(["git", "commit", "-m", commit_msg], capture_output=True, text=True, cwd=REPO_ROOT)
+            if commit_res.returncode != 0:
+                return False, f"git commit failed: {commit_res.stderr.strip()}"
+
+        # Push to remote
+        cmd = ["git", "push", remote]
+        if branch:
+            cmd.append(branch)
+        push_res = subprocess.run(cmd, capture_output=True, text=True, cwd=REPO_ROOT, timeout=15)
+        if push_res.returncode != 0:
+            return False, f"git push failed: {push_res.stderr.strip()}"
+        return True, "GIT_PUSH_OK"
+    except Exception as e:
+        return False, str(e)
+
+
+def save_external_anchor(anchor_path, record_index, event_type, record_hash, git_push=False, git_remote="origin", git_branch=None):
     """
     Saves an anchor record to an independent external JSON ledger.
-    Can be stored in git notes, committed to an independent file, or external database.
+    If git_push=True, automatically commits and pushes the ledger to git remote.
     """
     abs_path = os.path.abspath(anchor_path) if not os.path.isabs(anchor_path) else anchor_path
     os.makedirs(os.path.dirname(abs_path), exist_ok=True)
@@ -260,6 +312,9 @@ def save_external_anchor(anchor_path, record_index, event_type, record_hash):
     with open(tmp_path, "w", encoding="utf-8") as f:
         json.dump(anchors, f, indent=2)
     os.replace(tmp_path, abs_path)
+
+    if git_push:
+        push_external_anchor_to_git(abs_path, remote=git_remote, branch=git_branch)
 
 
 def load_external_anchors(anchor_path):
@@ -311,7 +366,12 @@ class ForwardSignalLogger:
         killzone_gate=True,
         p_scaled_filter=True,
         killzone_expiry=False,
-        skip_outside_kz_eval=False
+        skip_outside_kz_eval=False,
+        min_buffer_warmup=MIN_BUFFER_WARMUP,
+        buffer_size=300,
+        git_push_anchors=False,
+        git_remote="origin",
+        git_branch=None
     ):
         self.log_path = os.path.abspath(log_path) if not os.path.isabs(log_path) else log_path
         self.check_git = check_git
@@ -324,6 +384,11 @@ class ForwardSignalLogger:
         self.p_scaled_filter = p_scaled_filter
         self.killzone_expiry = killzone_expiry
         self.skip_outside_kz_eval = skip_outside_kz_eval
+        self.min_buffer_warmup = min_buffer_warmup
+        self.buffer_size = max(buffer_size, min_buffer_warmup)
+        self.git_push_anchors = git_push_anchors
+        self.git_remote = git_remote
+        self.git_branch = git_branch
 
         os.makedirs(os.path.dirname(self.log_path), exist_ok=True)
 
@@ -525,7 +590,15 @@ class ForwardSignalLogger:
 
         if self.external_anchor_path:
             try:
-                save_external_anchor(self.external_anchor_path, record["index"], event_type, rec_hash)
+                save_external_anchor(
+                    self.external_anchor_path,
+                    record["index"],
+                    event_type,
+                    rec_hash,
+                    git_push=self.git_push_anchors,
+                    git_remote=self.git_remote,
+                    git_branch=self.git_branch
+                )
             except Exception:
                 pass
 
@@ -535,9 +608,11 @@ class ForwardSignalLogger:
         """Writes the initial GENESIS record (Index 0)."""
         now_utc = datetime.now(timezone.utc).isoformat()
         genesis_data = {
+            "genesis_version": "v1.0",
+            "git_tag": FORWARD_GIT_TAG,
+            "git_commit": get_git_commit(),
             "forward_start_date": FORWARD_START_DATE,
             "params_hash": PARAMS_HASH,
-            "git_commit": get_git_commit(),
             "p_scaled": P_SCALED,
             "rr_target": RR_TARGET,
             "spread_assumed": SPREAD_ASSUMED,
@@ -600,7 +675,7 @@ class ForwardSignalLogger:
         self._closes.append(c)
         self._volumes.append(v)
 
-        if len(self._times_ny) > 300:
+        if len(self._times_ny) > self.buffer_size:
             self._times_ny.pop(0)
             self._opens.pop(0)
             self._highs.pop(0)
@@ -745,75 +820,78 @@ class ForwardSignalLogger:
 
         # 4. Evaluate New Signal on Closed Candle (when flat and no pending order)
         if self.active_position is None and self.pending_order is None:
+            n_buffered = len(self._times_ny)
+            if n_buffered < self.min_buffer_warmup:
+                # Buffer in warm-up period (< min_buffer_warmup): do not evaluate signals yet
+                return None
+
             kz_now = is_in_killzone(ts_ny.time())
             if not self.skip_outside_kz_eval or kz_now:
-                n_buffered = len(self._times_ny)
-                if n_buffered >= 35:
-                    df_eval = pd.DataFrame({
-                        "open": self._opens,
-                        "high": self._highs,
-                        "low": self._lows,
-                        "close": self._closes,
-                        "volume": self._volumes
-                    }, index=pd.DatetimeIndex(self._times_ny))
+                df_eval = pd.DataFrame({
+                    "open": self._opens,
+                    "high": self._highs,
+                    "low": self._lows,
+                    "close": self._closes,
+                    "volume": self._volumes
+                }, index=pd.DatetimeIndex(self._times_ny))
 
-                    t_idx = n_buffered - 1
-                    sig = evaluate_causal_signal_at_bar(df_eval, t_idx, killzone_gate=False)
-                    if sig is not None:
-                        self.signal_counter += 1
-                        sig_id = f"SIG-{self.signal_counter:04d}"
+                t_idx = n_buffered - 1
+                sig = evaluate_causal_signal_at_bar(df_eval, t_idx, killzone_gate=False)
+                if sig is not None:
+                    self.signal_counter += 1
+                    sig_id = f"SIG-{self.signal_counter:04d}"
 
-                        kz = sig["killzone"]
-                        risk_dist = sig["risk_dist"]
-                        stop_pct = round((risk_dist / c) * 100.0, 4)
+                    kz = sig["killzone"]
+                    risk_dist = sig["risk_dist"]
+                    stop_pct = round((risk_dist / c) * 100.0, 4)
 
-                        is_kz_valid = (kz in ("LONDON", "NY_AM")) if self.killzone_gate else True
-                        is_stop_valid = (stop_pct >= P_SCALED) if self.p_scaled_filter else True
+                    is_kz_valid = (kz in ("LONDON", "NY_AM")) if self.killzone_gate else True
+                    is_stop_valid = (stop_pct >= P_SCALED) if self.p_scaled_filter else True
 
-                        passed_primary = is_kz_valid and is_stop_valid
+                    passed_primary = is_kz_valid and is_stop_valid
 
-                        if passed_primary:
-                            filter_status = "PASSED_PRIMARY"
-                        elif not is_kz_valid:
-                            filter_status = "SKIPPED_OUTSIDE_KILLZONE"
-                        else:
-                            filter_status = "SKIPPED_STOP_TOO_TIGHT"
+                    if passed_primary:
+                        filter_status = "PASSED_PRIMARY"
+                    elif not is_kz_valid:
+                        filter_status = "SKIPPED_OUTSIDE_KILLZONE"
+                    else:
+                        filter_status = "SKIPPED_STOP_TOO_TIGHT"
 
-                        sig_data = {
+                    sig_data = {
+                        "signal_id": sig_id,
+                        "signal_num": self.signal_counter,
+                        "timestamp_ny": ts_ny.isoformat(),
+                        "direction": sig["direction"],
+                        "entry": sig["entry"],
+                        "sl": sig["sl"],
+                        "tp": sig["tp"],
+                        "risk_dist": risk_dist,
+                        "stop_pct": stop_pct,
+                        "p_scaled_floor": P_SCALED,
+                        "killzone": kz,
+                        "candle_ohlc": [o, h, l, c],
+                        "passed_primary": passed_primary,
+                        "filter_status": filter_status,
+                        "realized_spread_at_signal": cur_spread,
+                        "git_commit": get_git_commit(),
+                        "params_hash": PARAMS_HASH
+                    }
+
+                    self._append_event("SIGNAL", ts_utc.isoformat(), sig_data)
+
+                    # Only register pending order if signal passed primary filter
+                    if passed_primary:
+                        self.pending_order = {
                             "signal_id": sig_id,
-                            "signal_num": self.signal_counter,
-                            "timestamp_ny": ts_ny.isoformat(),
                             "direction": sig["direction"],
                             "entry": sig["entry"],
                             "sl": sig["sl"],
                             "tp": sig["tp"],
                             "risk_dist": risk_dist,
-                            "stop_pct": stop_pct,
-                            "p_scaled_floor": P_SCALED,
                             "killzone": kz,
-                            "candle_ohlc": [o, h, l, c],
-                            "passed_primary": passed_primary,
-                            "filter_status": filter_status,
-                            "realized_spread_at_signal": cur_spread,
-                            "git_commit": get_git_commit(),
-                            "params_hash": PARAMS_HASH
+                            "sig_time_utc": ts_utc.isoformat(),
+                            "bars_elapsed": 0
                         }
-
-                        self._append_event("SIGNAL", ts_utc.isoformat(), sig_data)
-
-                        # Only register pending order if signal passed primary filter
-                        if passed_primary:
-                            self.pending_order = {
-                                "signal_id": sig_id,
-                                "direction": sig["direction"],
-                                "entry": sig["entry"],
-                                "sl": sig["sl"],
-                                "tp": sig["tp"],
-                                "risk_dist": risk_dist,
-                                "killzone": kz,
-                                "sig_time_utc": ts_utc.isoformat(),
-                                "bars_elapsed": 0
-                            }
 
 
 def replay_dry_run(
