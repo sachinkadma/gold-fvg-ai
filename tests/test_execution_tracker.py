@@ -42,7 +42,7 @@ def test_spread_obs_event_builder_live_tick_and_bar():
     assert obs_tick["ask"] == 2650.48
     assert abs(obs_tick["realized_spread_pts"] - 0.38) < 1e-5
     assert abs(obs_tick["spread_diff_pts"] - 0.03) < 1e-5
-    assert obs_tick["source"] == "live_tick"
+    assert obs_tick["source"] == "TICK"
     assert obs_tick["units"] == "price_points_usd"
 
     # 2. Bar spread source (broker points e.g. 40 points -> 0.40 pts)
@@ -59,7 +59,7 @@ def test_spread_obs_event_builder_live_tick_and_bar():
     assert obs_bar["ask"] is None
     assert abs(obs_bar["realized_spread_pts"] - 0.40) < 1e-5
     assert abs(obs_bar["spread_diff_pts"] - 0.05) < 1e-5
-    assert obs_bar["source"] == "bar_spread"
+    assert obs_bar["source"] == "BAR"
 
     # 3. Default fallback
     obs_def = tracker.build_spread_observation(
@@ -70,7 +70,7 @@ def test_spread_obs_event_builder_live_tick_and_bar():
     )
     assert obs_def["realized_spread_pts"] == 0.35
     assert obs_def["spread_diff_pts"] == 0.0
-    assert obs_def["source"] == "assumed_default"
+    assert obs_def["source"] == "BAR"
 
 
 def test_chain_stays_valid_with_spread_obs_events(tmp_path):
@@ -218,3 +218,54 @@ def test_spread_report_empty_log_handled_cleanly():
     assert rep["overall"]["count"] == 0
     assert rep["overall"]["mean"] is None
     assert rep["overall"]["worst"] is None
+
+
+def test_spread_obs_does_not_change_n_wr_exp_net_r():
+    """
+    Verifies that SPREAD_OBS events never alter trade metrics:
+    N, win rate, net expectancy, or net R are identical whether SPREAD_OBS
+    events are included in the chain or completely excluded.
+    """
+    # Create a stream of events representing 2 completed trades and 1 expired order
+    events_with_spread = [
+        {"index": 0, "event": "GENESIS", "data": {"forward_start_date": "2026-11-12"}},
+        {"index": 1, "event": "SIGNAL", "data": {"signal_id": "SIG-0001", "passed_primary": True, "direction": "BUY"}},
+        {"index": 2, "event": "SPREAD_OBS", "data": {"trigger_event": "SIGNAL", "ref_id": "SIG-0001", "realized_spread_pts": 0.40, "source": "BAR"}},
+        {"index": 3, "event": "FILL", "data": {"signal_id": "SIG-0001", "direction": "BUY", "fill_price": 2600.0}},
+        {"index": 4, "event": "SPREAD_OBS", "data": {"trigger_event": "FILL", "ref_id": "SIG-0001", "realized_spread_pts": 0.38, "source": "BAR"}},
+        {"index": 5, "event": "CLOSE", "data": {"signal_id": "SIG-0001", "net_r": 1.95, "exit_reason": "TP"}},
+        {"index": 6, "event": "SIGNAL", "data": {"signal_id": "SIG-0002", "passed_primary": True, "direction": "SELL"}},
+        {"index": 7, "event": "SPREAD_OBS", "data": {"trigger_event": "SIGNAL", "ref_id": "SIG-0002", "realized_spread_pts": 0.35, "source": "TICK"}},
+        {"index": 8, "event": "FILL", "data": {"signal_id": "SIG-0002", "direction": "SELL", "fill_price": 2620.0}},
+        {"index": 9, "event": "SPREAD_OBS", "data": {"trigger_event": "FILL", "ref_id": "SIG-0002", "realized_spread_pts": 0.36, "source": "TICK"}},
+        {"index": 10, "event": "CLOSE", "data": {"signal_id": "SIG-0002", "net_r": -1.02, "exit_reason": "SL"}},
+        {"index": 11, "event": "SIGNAL", "data": {"signal_id": "SIG-0003", "passed_primary": True, "direction": "BUY"}},
+        {"index": 12, "event": "SPREAD_OBS", "data": {"trigger_event": "SIGNAL", "ref_id": "SIG-0003", "realized_spread_pts": 0.32, "source": "BAR"}},
+        {"index": 13, "event": "EXPIRE", "data": {"signal_id": "SIG-0003", "reason": "ORDER_EXPIRY_BARS_8"}}
+    ]
+
+    events_without_spread = [e for e in events_with_spread if e["event"] != "SPREAD_OBS"]
+
+    def extract_trade_metrics(events):
+        # N = PASSED_PRIMARY + FILLED + CLOSED
+        close_events = [e["data"] for e in events if e.get("event") == "CLOSE"]
+        n = len(close_events)
+        r_vals = [e["net_r"] for e in close_events]
+        wr = (len([r for r in r_vals if r > 0]) / n * 100.0) if n > 0 else 0.0
+        exp = float(np.mean(r_vals)) if n > 0 else 0.0
+        tot_r = float(np.sum(r_vals)) if n > 0 else 0.0
+        return n, round(wr, 4), round(exp, 4), round(tot_r, 4), r_vals
+
+    n_with, wr_with, exp_with, tot_with, r_with = extract_trade_metrics(events_with_spread)
+    n_wout, wr_wout, exp_wout, tot_wout, r_wout = extract_trade_metrics(events_without_spread)
+
+    assert n_with == 2
+    assert n_with == n_wout
+    assert wr_with == 50.0
+    assert wr_with == wr_wout
+    assert exp_with == 0.465
+    assert exp_with == exp_wout
+    assert tot_with == 0.93
+    assert tot_with == tot_wout
+    assert r_with == r_wout == [1.95, -1.02]
+

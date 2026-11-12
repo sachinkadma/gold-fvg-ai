@@ -7,9 +7,9 @@
 - **Tuning/Filtering**: No new filters, no parameter tuning. Long/short is strictly observation-only ("NOT FOR DECISIONS").
 
 ## 2. Current State
-- **Branch / Commit**: `reorg` (Phase B complete).
-- **Tags**: `forward-v1`..`forward-v4`, `prereg-v1`..`prereg-v4`. Tags pushed to `origin`.
-- **Pytest**: 40 passed in test suite (Exit Code: 0).
+- **Branch / Commit**: `reorg` (Phase C complete).
+- **Tags**: `forward-v1`..`forward-v6`, `prereg-v1`..`prereg-v4`. Tags pushed to `origin`.
+- **Pytest**: 45 passed in test suite (Exit Code: 0).
 - **Verify.py**: PASS (Exit Code: 0) — SHA256 integrity verified against baseline `trades.csv`.
 
 ## 3. Architecture & File Inventory
@@ -21,11 +21,19 @@
   - External Anchoring: Head hash committed via git plumbing to dedicated orphan branch `forward-anchors` on remote `origin`.
 - `forward/execution_tracker.py`: Realized spread observation logger and reporting engine (`SPREAD_OBS`).
   - Key functions: `ExecutionTracker`, `generate_spread_report`.
+  - `source` field: strictly `"TICK"` or `"BAR"`. Units: `price_points_usd`.
   - Metrics: Realized spread vs assumed 0.35 pts (mean, median, p95, worst), split by London / NY AM. Report ignores GAP records.
   - Contract: Strictly report-only; frozen cost model and net R are unaffected; no slippage (not measurable in paper mode).
+- `forward/monitor.py`: Read-only forward monitor and PREREG Section 5 gate evaluator.
+  - Key functions: `ForwardMonitor`, `block_bootstrap_ci`, `send_telegram_alert`, `alert_new_signal`, `alert_trade_closed`.
+  - Contract: Strictly read-only on the chain (never appends). Evaluates $N$ (PASSED_PRIMARY + FILLED + CLOSED), win rate, expectancy, total R, profit factor, 95% monthly-block bootstrap CI (exact match to `run_prereg_test.py`).
+  - Gates: $N=12$ early-fail (expectancy $\le 0 \implies \text{FAIL\_FWD}$), $N \ge 20$ ($\text{expectancy} > 0$ and $\text{ci\_lower} > 0 \implies \text{PASS\_FWD}$), 30-month limit.
+  - Directional breakdown: labeled `[OBSERVATION ONLY - NOT FOR DECISIONS]`.
+  - Chain integrity: halts with `CHAIN_INVALID` if `verify_chain()` fails.
 - `forward/run_forward.py`: Live/dry-run runner orchestrating MT5 closed 15m polling, deduplication, downtime recovery, and restart state reconstruction.
 - `tests/test_forward_logger.py`: 25 forward logger test cases (tamper detection, truncation, restart recovery, parity, warm-up suppression).
-- `tests/test_execution_tracker.py`: 4 execution tracker test cases (live tick vs bar spread, chain validity, GAP filtering, session metrics).
+- `tests/test_execution_tracker.py`: 5 execution tracker test cases (live tick vs bar spread, chain validity, GAP filtering, session metrics, SPREAD_OBS neutrality on N/WR/EXP).
+- `tests/test_forward_monitor.py`: 4 monitor test cases (bootstrap equality, synthetic smoke test, CHAIN_INVALID tamper halt, Telegram safe failure).
 
 ## 4. Verified Decisions
 - **Broker Timezone**: MetaQuotes-Demo runs on Cyprus EU DST (`server_tz="EU_EET"`, UTC+2 standard). Empirically verified against Dukascopy UTC: EU offset MAE 0.13–0.34 pts (92–100% matches); US offset (NY-7h) failed with MAE 6–18 pts (1–7% matches).
@@ -33,12 +41,11 @@
 - **Parity Protocol**: Trade outcomes strictly verified against `research.meta_labeling.pipeline_metalabeling:simulate_candidate_forward` with 100% exact `net_r` match.
 - **Startup Date Contract**: `FORWARD_START_DATE` is mandatory at startup (e.g. `2026-11-12T00:00:00Z`). Logger refuses start if missing or stale (>24h past). Written to `GENESIS`.
 - **Branch Protection**: Remote `forward-anchors` branch must have force-push disabled (`--force` prohibited).
-- **Unattended Push Auth**: For headless/daemon forward runs, authenticate via GitHub Deploy Key (read/write SSH key in `~/.ssh/id_ed25519`) or fine-grained Personal Access Token (PAT with Repository Contents: Read/Write) configured in git remote URL.
-- **Execution Tracking**: Units are price points in USD (`price_points_usd`). Realized spread logged at every `SIGNAL` and `FILL`. Cost model remains frozen at 0.35 pts.
+- **Execution Tracking**: Real MT5 broker point size is 0.01 USD. 13 raw points = 0.13 price points USD. Assumed spread is 0.35 USD points.
+- **Monitor Gates**: Implements exact PREREG Section 5 protocol. Evaluated at $N=12$, $N=20$, and at 30-month duration limit.
 
 ## 5. Open Items (Next Steps)
-- **C (Phase 3)**: monitor.py. First quote PREREG_TEST.md Section 5 verbatim and implement only what it states; ask user about anything ambiguous (do not invent gates like INCONCLUSIVE_FINAL unless quoted). Early-fail checked after every closed trade once N>=12. Telegram alerts. Long/short block labeled NOT FOR DECISIONS.
-- **D (Phase 4)**: gate boundary tests (N=11/12/19/20), golden-file test on a TRAIN slice, STATE.md update. Do not edit PREREG_TEST.md.
+- **Phase D**: Gate boundary tests ($N=11/12/19/20$), golden-file test on a TRAIN slice, `STATE.md` update. Stopped per instruction; awaiting user authorization.
 
 ## 6. Exact Operational Commands
 
@@ -54,6 +61,9 @@ python forward/run_forward.py --forward-start-date "2026-11-12T00:00:00Z" --dry-
 
 # Start Live Forward Runner
 python forward/run_forward.py --forward-start-date "2026-11-12T00:00:00Z" --log-path forward/signals.jsonl
+
+# Run Forward Monitor & Gate Evaluator
+python forward/monitor.py --log forward/signals.jsonl --status forward/forward_status.json
 
 # Verify Hash Chain Locally
 python -c "from forward.logger import verify_chain; print(verify_chain('forward/signals.jsonl'))"

@@ -76,10 +76,10 @@ class ExecutionTracker:
             bid = round(float(tick_bid), 3)
             ask = round(float(tick_ask), 3)
             spread_pts = round(ask - bid, 4)
-            source = "live_tick"
+            source = "TICK"
         elif realized_spread is not None:
             spread_pts = round(float(realized_spread), 4)
-            source = "explicit_realized"
+            source = "BAR"
         elif bar_spread_raw is not None:
             raw = float(bar_spread_raw)
             # If bar spread is in broker points (e.g. 35 for 0.35 pts), scale by point_size
@@ -87,10 +87,10 @@ class ExecutionTracker:
                 spread_pts = round(raw * self.point_size, 4)
             else:
                 spread_pts = round(raw, 4)
-            source = "bar_spread"
+            source = "BAR"
         else:
             spread_pts = round(self.assumed_spread_pts, 4)
-            source = "assumed_default"
+            source = "BAR"
 
         diff_pts = round(spread_pts - self.assumed_spread_pts, 4)
 
