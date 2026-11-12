@@ -1,0 +1,1 @@
+[2026-11-11T13:18:05.508647+00:00] VERDICT=INCONCLUSIVE | SPLIT=TEST (2022+) | COMMIT=44102295bbdd45f7ade5096642eafdf4806453f2 | PARAMS_HASH=cf8e2a9c695a3496 | PREREG_HASH=6aca6d3c8f3d00a9 | N=49 | WR=51.0% | EXP=+0.510R | CI_95=[+0.147,+0.829] | DETAIL=Sample underpowered (N=49 < 60 required). Forward paper-trading required.

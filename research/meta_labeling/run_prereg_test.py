@@ -248,13 +248,12 @@ def run_test_evaluation(log_path, is_final=False):
 
     # 3. Generate TEST candidates dynamically
     print("[CANDIDATE GENERATION] Generating causal setups on out-of-sample data...")
-    test_candidates = generate_candidates_and_features(df_test_full)
+    df_cand_test = generate_candidates_and_features(df_test_full)
 
-    if not test_candidates:
+    if df_cand_test is None or df_cand_test.empty:
         print("ERROR: No candidates generated on TEST data.")
         sys.exit(1)
 
-    df_cand_test = pd.DataFrame(test_candidates)
     closes = df_test_full["close"].values
     df_cand_test["close"] = closes[df_cand_test["signal_bar"].values]
 

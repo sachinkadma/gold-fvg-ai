@@ -70,6 +70,93 @@ def log_test_run(split_name, trade_count, expectancy_r, win_rate):
     return prior_runs
 
 
+def check_position_exit(direction, sl_level, tp_level, cur_hi, cur_lo, spread=None, slippage=None):
+    """
+    Evaluates intra-candle exit for an active position using conservative SL-first logic.
+    Returns: (exit_triggered: bool, exit_price: float or None, exit_reason: str or None)
+    """
+    spread = spread if spread is not None else config.SPREAD
+    slippage = slippage if slippage is not None else config.SLIPPAGE
+    exit_triggered = False
+    exit_price = None
+    exit_reason = None
+
+    if direction == "BUY":
+        sl_hit = (cur_lo <= sl_level)
+        tp_hit = (cur_hi >= tp_level)
+        if sl_hit and tp_hit:
+            exit_triggered = True
+            exit_price = round(sl_level - slippage, 2)
+            exit_reason = "SL (Conservative Same-Candle)"
+        elif sl_hit:
+            exit_triggered = True
+            exit_price = round(sl_level - slippage, 2)
+            exit_reason = "SL"
+        elif tp_hit:
+            exit_triggered = True
+            exit_price = round(tp_level, 2)
+            exit_reason = "TP"
+
+    elif direction == "SELL":
+        sl_hit = (cur_hi >= sl_level)
+        tp_hit = (cur_lo <= tp_level)
+        if sl_hit and tp_hit:
+            exit_triggered = True
+            exit_price = round(sl_level + slippage + spread, 2)
+            exit_reason = "SL (Conservative Same-Candle)"
+        elif sl_hit:
+            exit_triggered = True
+            exit_price = round(sl_level + slippage + spread, 2)
+            exit_reason = "SL"
+        elif tp_hit:
+            exit_triggered = True
+            exit_price = round(tp_level + spread, 2)
+            exit_reason = "TP"
+
+    return exit_triggered, exit_price, exit_reason
+
+
+def check_pending_order(p_dir, p_entry, p_sl, cur_hi, cur_lo, bars_elapsed, spread=None, max_expiry_bars=None, killzone_window_open=True):
+    """
+    Evaluates a pending limit order on a newly closed candle.
+    Returns: (status: str, actual_entry: float or None)
+    status is one of: {"INVALIDATED", "EXPIRED", "FILLED", "PENDING"}
+    """
+    spread = spread if spread is not None else config.SPREAD
+    max_expiry_bars = max_expiry_bars if max_expiry_bars is not None else config.ORDER_EXPIRY_BARS
+
+    # A. Invalidation: price hits SL before filling
+    if (p_dir == "BUY" and cur_lo <= p_sl) or (p_dir == "SELL" and cur_hi >= p_sl):
+        return "INVALIDATED", None
+
+    # B. Expiry by duration or killzone close
+    if bars_elapsed > max_expiry_bars or not killzone_window_open:
+        return "EXPIRED", None
+
+    # C. Fill check (BID limit order trades THROUGH entry by 0.01 pt)
+    if p_dir == "BUY" and cur_lo <= (p_entry - 0.01):
+        return "FILLED", round(p_entry + spread, 2)
+    elif p_dir == "SELL" and cur_hi >= (p_entry + 0.01):
+        return "FILLED", round(p_entry, 2)
+
+    return "PENDING", None
+
+
+def check_same_candle_sl(p_dir, p_sl, cur_hi, cur_lo, spread=None, slippage=None):
+    """
+    Conservative Rule: If fill candle itself touches SL, count as SL immediately.
+    Returns: (hit: bool, actual_exit: float or None)
+    """
+    spread = spread if spread is not None else config.SPREAD
+    slippage = slippage if slippage is not None else config.SLIPPAGE
+
+    if p_dir == "BUY" and cur_lo <= p_sl:
+        return True, round(p_sl - slippage, 2)
+    elif p_dir == "SELL" and cur_hi >= p_sl:
+        return True, round(p_sl + slippage + spread, 2)
+    return False, None
+
+
 def run_backtest_simulation(df, initial_equity=None, risk_percent=None):
     """
     Executes bar-by-bar causal simulation over the provided DataFrame.
@@ -122,47 +209,15 @@ def run_backtest_simulation(df, initial_equity=None, risk_percent=None):
             lot_size = position["lot_size"]
             planned_risk_usd = position["planned_risk_usd"]
 
-            exit_triggered = False
-            exit_price = None
-            exit_reason = None
-
-            if direction == "BUY":
-                sl_hit = (cur_lo <= sl_level)
-                tp_hit = (cur_hi >= tp_level)
-
-                if sl_hit and tp_hit:
-                    # Conservative rule: SL counted first if both touched within same candle
-                    exit_triggered = True
-                    exit_price = round(sl_level - slippage, 2)
-                    exit_reason = "SL (Conservative Same-Candle)"
-                elif sl_hit:
-                    exit_triggered = True
-                    exit_price = round(sl_level - slippage, 2)
-                    exit_reason = "SL"
-                elif tp_hit:
-                    exit_triggered = True
-                    # Limit TP fill at bid (data is BID-side)
-                    exit_price = round(tp_level, 2)
-                    exit_reason = "TP"
-
-            elif direction == "SELL":
-                sl_hit = (cur_hi >= sl_level)
-                tp_hit = (cur_lo <= tp_level)
-
-                if sl_hit and tp_hit:
-                    # Conservative rule: SL counted first if both touched
-                    exit_triggered = True
-                    exit_price = round(sl_level + slippage + spread, 2)
-                    exit_reason = "SL (Conservative Same-Candle)"
-                elif sl_hit:
-                    exit_triggered = True
-                    exit_price = round(sl_level + slippage + spread, 2)
-                    exit_reason = "SL"
-                elif tp_hit:
-                    exit_triggered = True
-                    # Limit TP fill at ask (data is BID-side)
-                    exit_price = round(tp_level + spread, 2)
-                    exit_reason = "TP"
+            exit_triggered, exit_price, exit_reason = check_position_exit(
+                direction=direction,
+                sl_level=sl_level,
+                tp_level=tp_level,
+                cur_hi=cur_hi,
+                cur_lo=cur_lo,
+                spread=spread,
+                slippage=slippage
+            )
 
             if exit_triggered:
                 # Calculate PnL
@@ -217,34 +272,23 @@ def run_backtest_simulation(df, initial_equity=None, risk_percent=None):
             p_sig_bar = pending_order["sig_bar"]
             p_kz = pending_order["killzone"]
 
-            # A. Check Invalidation Level Prior to or on Fill
-            # If price hits SL before filling the pending order, setup is invalidated
-            invalidated = False
-            if p_dir == "BUY" and cur_lo <= p_sl:
-                invalidated = True
-            elif p_dir == "SELL" and cur_hi >= p_sl:
-                invalidated = True
+            kz_window_open = (is_in_killzone(cur_time.time()) == p_kz)
+            order_status, actual_entry = check_pending_order(
+                p_dir=p_dir,
+                p_entry=p_entry,
+                p_sl=p_sl,
+                cur_hi=cur_hi,
+                cur_lo=cur_lo,
+                bars_elapsed=(t - p_sig_bar),
+                spread=spread,
+                max_expiry_bars=config.ORDER_EXPIRY_BARS,
+                killzone_window_open=kz_window_open
+            )
 
-            if invalidated:
+            if order_status in ("INVALIDATED", "EXPIRED"):
                 pending_order = None
-
-            # B. Check Expiry Conditions
-            elif (t - p_sig_bar) > config.ORDER_EXPIRY_BARS:
-                # Order expired by duration (default 8 bars)
-                pending_order = None
-            elif is_in_killzone(cur_time.time()) != p_kz:
-                # Killzone window closed
-                pending_order = None
-
-            # C. Check Fill (Only if price trades THROUGH entry level: buy low <= entry - 0.01; sell high >= entry + 0.01)
-            else:
-                filled = False
-                if p_dir == "BUY" and cur_lo <= (p_entry - 0.01):
-                    filled = True
-                    actual_entry = round(p_entry + spread, 2) # Buys fill at ask (bid + full spread)
-                elif p_dir == "SELL" and cur_hi >= (p_entry + 0.01):
-                    filled = True
-                    actual_entry = round(p_entry, 2) # Sells fill at bid
+            elif order_status == "FILLED":
+                filled = True
 
                 if filled:
                     planned_risk_dist = abs(p_entry - p_sl)
@@ -253,14 +297,14 @@ def run_backtest_simulation(df, initial_equity=None, risk_percent=None):
                     lot_size = round(risk_capital_usd / (planned_risk_dist * config.CONTRACT_SIZE), 2)
                     lot_size = max(0.01, lot_size)
 
-                    # Conservative Rule: If fill candle itself touches SL, count as SL immediately!
-                    fill_candle_sl = False
-                    if p_dir == "BUY" and cur_lo <= p_sl:
-                        fill_candle_sl = True
-                        actual_exit = round(p_sl - slippage, 2)
-                    elif p_dir == "SELL" and cur_hi >= p_sl:
-                        fill_candle_sl = True
-                        actual_exit = round(p_sl + slippage + spread, 2)
+                    fill_candle_sl, actual_exit = check_same_candle_sl(
+                        p_dir=p_dir,
+                        p_sl=p_sl,
+                        cur_hi=cur_hi,
+                        cur_lo=cur_lo,
+                        spread=spread,
+                        slippage=slippage
+                    )
 
                     if fill_candle_sl:
                         if p_dir == "BUY":
