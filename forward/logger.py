@@ -200,21 +200,75 @@ def verify_against_anchor(log_path, anchored_hashes):
     return True, "ANCHOR_AND_CHAIN_VALID", count
 
 
-def convert_mt5_time_to_utc(server_time, server_tz="EET"):
+def convert_mt5_time_to_utc(server_time, server_tz="US_EET"):
     """
-    Converts MT5 server time (typically EET/EEST UTC+2/UTC+3 or UTC) to UTC datetime.
-    Correctly accounts for seasonal Daylight Saving Time transitions on standard broker servers.
+    Converts MT5 broker server time to UTC datetime.
+    Retail Forex/Gold brokers (MetaQuotes Demo, IC Markets, Pepperstone, etc.)
+    operate on Eastern European Time (UTC+2 in winter, UTC+3 in summer) that shifts
+    on US Daylight Saving Time rules (2nd Sunday in March to 1st Sunday in November)
+    so that 00:00:00 server time always equals 17:00:00 America/New_York close.
+
+    Formula for US_EET:
+        Server_Time = America/New_York + 7 hours (exact all year round)
+        America/New_York = Server_Time - 7 hours
+        UTC = (Server_Time - 7 hours) localized to America/New_York, converted to UTC.
+
+    Also supports:
+        - 'EU_EET' / 'Europe/Athens' (European Union directive DST transitions)
+        - 'UTC' / 'GMT' (Direct UTC timestamp)
     """
     ts = pd.Timestamp(server_time)
-    if ts.tzinfo is None:
-        tz_str = server_tz
-        if server_tz.upper() in ("EET", "EEST"):
-            tz_str = "Europe/Athens"
-        ts_localized = ts.tz_localize(tz_str)
-    else:
-        ts_localized = ts
+    if ts.tzinfo is not None:
+        return ts.tz_convert("UTC")
 
-    return ts_localized.tz_convert("UTC")
+    tz_mode = server_tz.upper() if isinstance(server_tz, str) else "US_EET"
+
+    if tz_mode in ("UTC", "GMT"):
+        return ts.tz_localize("UTC")
+    elif tz_mode in ("EU_EET", "EUROPE/ATHENS", "EUROPE/HELSINKI"):
+        return ts.tz_localize("Europe/Athens").tz_convert("UTC")
+    else:
+        # Standard US-DST broker rule: Server = NY + 7h => NY = Server - 7h
+        ts_ny = ts - timedelta(hours=7)
+        ts_ny_aware = ts_ny.tz_localize(NY_TZ, nonexistent="shift_forward")
+        return ts_ny_aware.tz_convert("UTC")
+
+
+def save_external_anchor(anchor_path, record_index, event_type, record_hash):
+    """
+    Saves an anchor record to an independent external JSON ledger.
+    Can be stored in git notes, committed to an independent file, or external database.
+    """
+    abs_path = os.path.abspath(anchor_path) if not os.path.isabs(anchor_path) else anchor_path
+    os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+    anchors = []
+    if os.path.exists(abs_path) and os.path.getsize(abs_path) > 0:
+        try:
+            with open(abs_path, "r", encoding="utf-8") as f:
+                anchors = json.load(f)
+        except Exception:
+            anchors = []
+
+    anchors.append({
+        "index": record_index,
+        "event": event_type,
+        "record_hash": record_hash,
+        "anchored_at_utc": datetime.now(timezone.utc).isoformat()
+    })
+
+    tmp_path = abs_path + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(anchors, f, indent=2)
+    os.replace(tmp_path, abs_path)
+
+
+def load_external_anchors(anchor_path):
+    """Loads list of anchored records from an external anchor ledger."""
+    abs_path = os.path.abspath(anchor_path) if not os.path.isabs(anchor_path) else anchor_path
+    if not os.path.exists(abs_path):
+        return []
+    with open(abs_path, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 
 def anchor_head_hash_to_telegram(record_index, event_type, record_hash, token=None, chat_id=None):
@@ -251,21 +305,25 @@ class ForwardSignalLogger:
         check_git=True,
         check_frozen_hashes=True,
         anchor_callback=None,
+        external_anchor_path=None,
         telegram_token=None,
         telegram_chat_id=None,
         killzone_gate=True,
         p_scaled_filter=True,
-        killzone_expiry=False
+        killzone_expiry=False,
+        skip_outside_kz_eval=False
     ):
         self.log_path = os.path.abspath(log_path) if not os.path.isabs(log_path) else log_path
         self.check_git = check_git
         self.check_frozen_hashes = check_frozen_hashes
         self.anchor_callback = anchor_callback
+        self.external_anchor_path = os.path.abspath(external_anchor_path) if external_anchor_path else None
         self.telegram_token = telegram_token
         self.telegram_chat_id = telegram_chat_id
         self.killzone_gate = killzone_gate
         self.p_scaled_filter = p_scaled_filter
         self.killzone_expiry = killzone_expiry
+        self.skip_outside_kz_eval = skip_outside_kz_eval
 
         os.makedirs(os.path.dirname(self.log_path), exist_ok=True)
 
@@ -274,7 +332,10 @@ class ForwardSignalLogger:
         self.active_position = None
         self.last_candle_time_utc = None
         self.signal_counter = 0
-        self.anchor_queue = []
+
+        # Persisted anchor retry queue (survives crashes & restarts)
+        self.queue_path = os.path.splitext(self.log_path)[0] + "_anchor_queue.json"
+        self.anchor_queue = self._load_anchor_queue()
 
         # Fast candle buffer
         self._times_ny = []
@@ -289,6 +350,30 @@ class ForwardSignalLogger:
 
         # Initialize or resume chain
         self._initialize_or_resume_chain()
+
+    def _load_anchor_queue(self):
+        """Loads pending un-anchored records from disk."""
+        if os.path.exists(self.queue_path) and os.path.getsize(self.queue_path) > 0:
+            try:
+                with open(self.queue_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    return [tuple(x) for x in data]
+            except Exception:
+                return []
+        return []
+
+    def _save_anchor_queue(self):
+        """Persists pending anchor retry queue to disk atomically."""
+        if self.anchor_queue:
+            tmp_path = self.queue_path + ".tmp"
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(self.anchor_queue, f)
+            os.replace(tmp_path, self.queue_path)
+        elif os.path.exists(self.queue_path):
+            try:
+                os.remove(self.queue_path)
+            except Exception:
+                pass
 
     def _run_preflight_checks(self):
         """Enforces pre-flight checks: clean git tree and matching frozen file hashes."""
@@ -392,6 +477,7 @@ class ForwardSignalLogger:
             if not success:
                 remaining.append(item)
         self.anchor_queue = remaining
+        self._save_anchor_queue()
 
     def _append_event(self, event_type, timestamp_utc, data_dict):
         """Appends a new event record to the hash chain and anchors head hash."""
@@ -415,20 +501,33 @@ class ForwardSignalLogger:
         self.head_hash = rec_hash
         self.current_index += 1
 
-        # External anchor: on failure, enqueue for retry (never skip)
+        # External anchor: on failure, enqueue for retry and persist to disk (never skip)
         anchor_item = (record["index"], event_type, rec_hash)
+        anchor_ok = False
         if self.anchor_callback:
             try:
                 self.anchor_callback(record["index"], event_type, rec_hash)
+                anchor_ok = True
             except Exception:
-                self.anchor_queue.append(anchor_item)
+                anchor_ok = False
         elif self.telegram_token and self.telegram_chat_id:
             ok, _ = anchor_head_hash_to_telegram(
                 record["index"], event_type, rec_hash,
                 token=self.telegram_token, chat_id=self.telegram_chat_id
             )
-            if not ok:
-                self.anchor_queue.append(anchor_item)
+            anchor_ok = ok
+        else:
+            anchor_ok = True
+
+        if not anchor_ok:
+            self.anchor_queue.append(anchor_item)
+            self._save_anchor_queue()
+
+        if self.external_anchor_path:
+            try:
+                save_external_anchor(self.external_anchor_path, record["index"], event_type, rec_hash)
+            except Exception:
+                pass
 
         return record
 
@@ -647,7 +746,7 @@ class ForwardSignalLogger:
         # 4. Evaluate New Signal on Closed Candle (when flat and no pending order)
         if self.active_position is None and self.pending_order is None:
             kz_now = is_in_killzone(ts_ny.time())
-            if not self.killzone_gate or kz_now:
+            if not self.skip_outside_kz_eval or kz_now:
                 n_buffered = len(self._times_ny)
                 if n_buffered >= 35:
                     df_eval = pd.DataFrame({
