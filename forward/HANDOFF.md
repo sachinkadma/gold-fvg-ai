@@ -7,20 +7,25 @@
 - **Tuning/Filtering**: No new filters, no parameter tuning. Long/short is strictly observation-only ("NOT FOR DECISIONS").
 
 ## 2. Current State
-- **Branch / Commit**: `reorg` (clean working tree).
-- **Tags**: `forward-v1`, `forward-v2`, `forward-v3` (`5d231d6`), `prereg-v1`..`prereg-v4`. Tags pushed to `origin`.
-- **Pytest**: 36 passed in 283.02s (Exit Code: 0).
+- **Branch / Commit**: `reorg` (Phase B complete).
+- **Tags**: `forward-v1`..`forward-v4`, `prereg-v1`..`prereg-v4`. Tags pushed to `origin`.
+- **Pytest**: 40 passed in test suite (Exit Code: 0).
 - **Verify.py**: PASS (Exit Code: 0) — SHA256 integrity verified against baseline `trades.csv`.
 
 ## 3. Architecture & File Inventory
 - `forward/__init__.py`: Package init.
-- `forward/logger.py`: Immutable append-only event hash chain (`GENESIS`, `SIGNAL`, `SKIPPED`, `FILL`, `EXPIRE`, `CLOSE`, `GAP`).
+- `forward/logger.py`: Immutable append-only event hash chain (`GENESIS`, `SIGNAL`, `SPREAD_OBS`, `SKIPPED`, `FILL`, `EXPIRE`, `CLOSE`, `GAP`).
   - Key functions: `ForwardSignalLogger`, `verify_chain`, `verify_against_anchor`, `convert_mt5_time_to_utc`, `push_external_anchor_to_git`.
   - Storage: Append-only JSONL (`forward/signals.jsonl`).
   - Companion Files: `[log]_buffer.json` (buffer snapshot), `[log]_anchor_queue.json` (un-pushed retry queue).
   - External Anchoring: Head hash committed via git plumbing to dedicated orphan branch `forward-anchors` on remote `origin`.
+- `forward/execution_tracker.py`: Realized spread observation logger and reporting engine (`SPREAD_OBS`).
+  - Key functions: `ExecutionTracker`, `generate_spread_report`.
+  - Metrics: Realized spread vs assumed 0.35 pts (mean, median, p95, worst), split by London / NY AM. Report ignores GAP records.
+  - Contract: Strictly report-only; frozen cost model and net R are unaffected; no slippage (not measurable in paper mode).
 - `forward/run_forward.py`: Live/dry-run runner orchestrating MT5 closed 15m polling, deduplication, downtime recovery, and restart state reconstruction.
-- `tests/test_forward_logger.py`: 25 forward test cases (tamper detection, truncation, restart recovery, parity, warm-up suppression, crash-before-anchor, genesis metadata).
+- `tests/test_forward_logger.py`: 25 forward logger test cases (tamper detection, truncation, restart recovery, parity, warm-up suppression).
+- `tests/test_execution_tracker.py`: 4 execution tracker test cases (live tick vs bar spread, chain validity, GAP filtering, session metrics).
 
 ## 4. Verified Decisions
 - **Broker Timezone**: MetaQuotes-Demo runs on Cyprus EU DST (`server_tz="EU_EET"`, UTC+2 standard). Empirically verified against Dukascopy UTC: EU offset MAE 0.13–0.34 pts (92–100% matches); US offset (NY-7h) failed with MAE 6–18 pts (1–7% matches).
@@ -29,17 +34,10 @@
 - **Startup Date Contract**: `FORWARD_START_DATE` is mandatory at startup (e.g. `2026-11-12T00:00:00Z`). Logger refuses start if missing or stale (>24h past). Written to `GENESIS`.
 - **Branch Protection**: Remote `forward-anchors` branch must have force-push disabled (`--force` prohibited).
 - **Unattended Push Auth**: For headless/daemon forward runs, authenticate via GitHub Deploy Key (read/write SSH key in `~/.ssh/id_ed25519`) or fine-grained Personal Access Token (PAT with Repository Contents: Read/Write) configured in git remote URL.
+- **Execution Tracking**: Units are price points in USD (`price_points_usd`). Realized spread logged at every `SIGNAL` and `FILL`. Cost model remains frozen at 0.35 pts.
 
 ## 5. Open Items (Next Steps)
-- **A1. Genesis**: auto-read git_tag/commit (no hardcoded forward-v1); add server_tz=EU_EET, MT5 server name, symbol, feed name; run_forward default EU_EET; test that 2026-03-10 00:00 server and 2026-10-27 00:00 server both map to 22:00 UTC of the previous day.
-- **A2. Dry-run** (3 days live MT5, no orders): SIGNAL count by filter_status; dedupe repeated setups if found; N = PASSED_PRIMARY + FILLED + CLOSED only; label weekend market-close GAP separately from downtime GAP.
-- **A3. History preload**: bars before forward_start_date only fill the buffer; no SIGNAL/FILL/CLOSE for them; test.
-- **A4. Recovery**: rebuild buffer from MT5 history and compare with _buffer.json (chain is source of truth); tests for restart with PENDING order and crash after append before anchor push.
-- **A5. Anchor**: show `git ls-remote origin forward-anchors`; test that unreachable remote refuses startup; document deploy key/token for unattended push. Do not change remote settings.
-- **A6. Read-only**: explain how simulate_candidate_forward handled end-of-data unresolved trades in the TEST run (no changes to frozen files).
-- **A7. Final foreground pytest + verify.py on the tagged commit** (redirect to file, last 15 lines + exit code).
-- **B (Phase 2, after A is committed)**: execution_tracker.py. SPREAD_OBS event type in the chain, realized spread vs assumed 0.35 pts ONLY (mean, median, p95, worst, split London/NY AM). No slippage (not measurable in paper mode). Never alter cost model or net R.
-- **C (Phase 3)**: monitor.py. First quote PREREG_TEST.md Section 5 verbatim and implement only what it states; ask me about anything ambiguous (do not invent gates like INCONCLUSIVE_FINAL unless quoted). Early-fail checked after every closed trade once N>=12. Telegram alerts. Long/short block labeled NOT FOR DECISIONS.
+- **C (Phase 3)**: monitor.py. First quote PREREG_TEST.md Section 5 verbatim and implement only what it states; ask user about anything ambiguous (do not invent gates like INCONCLUSIVE_FINAL unless quoted). Early-fail checked after every closed trade once N>=12. Telegram alerts. Long/short block labeled NOT FOR DECISIONS.
 - **D (Phase 4)**: gate boundary tests (N=11/12/19/20), golden-file test on a TRAIN slice, STATE.md update. Do not edit PREREG_TEST.md.
 
 ## 6. Exact Operational Commands

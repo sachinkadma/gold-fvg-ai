@@ -933,10 +933,14 @@ def test_restart_recovery_mid_position_equals_uninterrupted(train_data, tmp_path
     evts_unint = [json.loads(l) for l in open(p_unint) if l.strip()]
     fill_idx = [i for i, e in enumerate(evts_unint) if e["event"] == "FILL" and e["data"]["signal_id"] == "SIG-0003"][0]
 
-    # 2. Interrupted run: write records up to fill_idx (simulating kill right after fill)
+    # 2. Interrupted run: write records up to fill transaction (simulating kill right after fill bar)
+    cutoff_idx = fill_idx + 1
+    if cutoff_idx < len(evts_unint) and evts_unint[cutoff_idx]["event"] == "SPREAD_OBS":
+        cutoff_idx += 1
+
     p_inter = str(tmp_path / "interrupted.jsonl")
     with open(p_inter, "w", encoding="utf-8") as f:
-        for e in evts_unint[:fill_idx + 1]:
+        for e in evts_unint[:cutoff_idx]:
             f.write(json.dumps(e, separators=(",", ":")) + "\n")
 
     # 3. Re-boot logger on the interrupted file

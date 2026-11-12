@@ -125,11 +125,18 @@ def run_dry_run(mt5, symbol, forward_start_date, log_path, days=3, server_tz="EU
     closes = [e for e in events if e["event"] == "CLOSE"]
     n_trades = len(closes)
 
+    from forward.execution_tracker import ExecutionTracker
+    tracker = ExecutionTracker()
+    sp_rep = tracker.generate_spread_report(events)
+
     logger.info("=== DRY-RUN REPLAY SUMMARY ===")
     logger.info(f"Total events logged: {count} | Chain integrity: {valid} ({msg})")
     logger.info(f"Signals by filter_status: {status_counts}")
     logger.info(f"Gaps breakdown: {gap_counts}")
     logger.info(f"Fills: {len(fills)} | Closed trades (N): {n_trades}")
+    logger.info(f"Spread Observations: {sp_rep['total_observations']}")
+    if sp_rep['total_observations'] > 0:
+        logger.info(tracker.format_report_text(sp_rep))
     return valid
 
 
@@ -237,6 +244,10 @@ def run_forward_loop(
 
                     # Process the single newly closed candle
                     spread = closed_bar["spread"] * 0.01 if "spread" in closed_bar.dtype.names else None
+                    tick = mt5.symbol_info_tick(symbol)
+                    tb = float(tick.bid) if tick is not None and getattr(tick, "bid", 0) > 0 else None
+                    ta = float(tick.ask) if tick is not None and getattr(tick, "ask", 0) > 0 else None
+
                     logger.info(f"New closed candle: {bar_time_utc.isoformat()} O={closed_bar['open']} H={closed_bar['high']} L={closed_bar['low']} C={closed_bar['close']}")
                     sig_logger.on_candle_closed({
                         "time": closed_bar["time"],
@@ -244,7 +255,10 @@ def run_forward_loop(
                         "high": closed_bar["high"],
                         "low": closed_bar["low"],
                         "close": closed_bar["close"],
-                        "volume": closed_bar["tick_volume"]
+                        "volume": closed_bar["tick_volume"],
+                        "spread": closed_bar["spread"] if "spread" in closed_bar.dtype.names else None,
+                        "tick_bid": tb,
+                        "tick_ask": ta
                     }, realized_spread=spread)
 
             time.sleep(poll_interval)

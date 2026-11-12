@@ -444,7 +444,9 @@ class ForwardSignalLogger:
         git_push_anchors=False,
         git_remote="origin",
         git_branch="forward-anchors",
-        enforce_staleness=None
+        enforce_staleness=None,
+        track_spread=True,
+        point_size=0.01
     ):
         self.log_path = os.path.abspath(log_path) if not os.path.isabs(log_path) else log_path
         self.check_git = check_git
@@ -467,6 +469,18 @@ class ForwardSignalLogger:
         self.git_remote = git_remote
         self.git_branch = git_branch
         self.enforce_staleness = check_git if enforce_staleness is None else enforce_staleness
+        self.track_spread = track_spread
+        self.point_size = point_size
+
+        if self.track_spread:
+            from forward.execution_tracker import ExecutionTracker
+            self.execution_tracker = ExecutionTracker(
+                assumed_spread_pts=SPREAD_ASSUMED,
+                point_size=point_size,
+                symbol=self.symbol
+            )
+        else:
+            self.execution_tracker = None
 
         # Forward Start Date staleness validation (< 1 day in the past)
         if forward_start_date is not None:
@@ -923,7 +937,18 @@ class ForwardSignalLogger:
         l = float(candle_dict["low"])
         c = float(candle_dict["close"])
         v = float(candle_dict.get("volume", 0.0))
-        cur_spread = float(realized_spread) if realized_spread is not None else SPREAD_ASSUMED
+
+        tick_bid = candle_dict.get("tick_bid", candle_dict.get("bid"))
+        tick_ask = candle_dict.get("tick_ask", candle_dict.get("ask"))
+        bar_spread_raw = candle_dict.get("spread")
+
+        if realized_spread is not None:
+            cur_spread = float(realized_spread)
+        elif bar_spread_raw is not None:
+            raw_sp = float(bar_spread_raw)
+            cur_spread = raw_sp * self.point_size if raw_sp > 2.0 else raw_sp
+        else:
+            cur_spread = SPREAD_ASSUMED
 
         # Duplicate candle deduplication
         if self.last_candle_time_utc is not None and ts_utc <= self.last_candle_time_utc:
@@ -1094,6 +1119,20 @@ class ForwardSignalLogger:
                     "assumed_spread": SPREAD_ASSUMED
                 })
 
+                if self.track_spread and self.execution_tracker is not None:
+                    fill_kz = is_in_killzone(ts_ny.time())
+                    spread_obs = self.execution_tracker.build_spread_observation(
+                        trigger_event="FILL",
+                        ref_id=p["signal_id"],
+                        timestamp_ny=ts_ny.isoformat(),
+                        session=fill_kz or p.get("killzone") or "Outside Killzone",
+                        tick_bid=tick_bid,
+                        tick_ask=tick_ask,
+                        bar_spread_raw=bar_spread_raw,
+                        realized_spread=cur_spread
+                    )
+                    self._append_event("SPREAD_OBS", ts_utc.isoformat(), spread_obs)
+
                 same_candle_sl, actual_exit = check_same_candle_sl(
                     p_dir=p["direction"],
                     p_sl=p["sl"],
@@ -1197,6 +1236,19 @@ class ForwardSignalLogger:
                     }
 
                     self._append_event("SIGNAL", ts_utc.isoformat(), sig_data)
+
+                    if self.track_spread and self.execution_tracker is not None:
+                        spread_obs = self.execution_tracker.build_spread_observation(
+                            trigger_event="SIGNAL",
+                            ref_id=sig_id,
+                            timestamp_ny=ts_ny.isoformat(),
+                            session=kz or "Outside Killzone",
+                            tick_bid=tick_bid,
+                            tick_ask=tick_ask,
+                            bar_spread_raw=bar_spread_raw,
+                            realized_spread=cur_spread
+                        )
+                        self._append_event("SPREAD_OBS", ts_utc.isoformat(), spread_obs)
 
                     # Only register pending order if signal passed primary filter
                     if passed_primary:
