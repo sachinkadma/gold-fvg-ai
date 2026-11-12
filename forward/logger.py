@@ -443,11 +443,24 @@ class ForwardSignalLogger:
         feed_name="MT5",
         git_push_anchors=False,
         git_remote="origin",
-        git_branch="forward-anchors",
+        git_branch=None,
         enforce_staleness=None,
         track_spread=True,
-        point_size=0.01
+        point_size=0.01,
+        rehearsal=False
     ):
+        self.rehearsal = rehearsal
+        if self.rehearsal:
+            if git_branch is None or git_branch == "forward-anchors-rehearsal":
+                git_branch = "forward-anchors-rehearsal"
+            elif git_branch == "forward-anchors":
+                raise ValueError("REHEARSAL ERROR: Rehearsal mode strictly prohibits pushing to production 'forward-anchors' branch!")
+            prod_log = os.path.abspath(os.path.join(REPO_ROOT, "forward", "signals.jsonl"))
+            if os.path.abspath(log_path) == prod_log:
+                raise ValueError("REHEARSAL ERROR: Rehearsal mode strictly prohibits writing to production 'forward/signals.jsonl'!")
+        elif git_branch is None:
+            git_branch = "forward-anchors"
+
         self.log_path = os.path.abspath(log_path) if not os.path.isabs(log_path) else log_path
         self.check_git = check_git
         self.check_frozen_hashes = check_frozen_hashes

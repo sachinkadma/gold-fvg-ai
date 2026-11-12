@@ -154,7 +154,8 @@ def run_forward_loop(
     git_branch="forward-anchors",
     poll_interval=5.0,
     check_git=True,
-    check_frozen_hashes=True
+    check_frozen_hashes=True,
+    rehearsal=False
 ):
     """
     Main forward paper-trading polling loop.
@@ -184,7 +185,8 @@ def run_forward_loop(
         feed_name=feed_name,
         git_push_anchors=git_push_anchors,
         git_remote=git_remote,
-        git_branch=git_branch
+        git_branch=git_branch,
+        rehearsal=rehearsal
     )
 
     # Pre-warm buffer if empty or incomplete
@@ -289,8 +291,23 @@ def main():
     parser.add_argument("--dry-run-days", type=int, default=None, help="If set, executes a dry-run on recent MT5 history and exits")
     parser.add_argument("--no-git-check", action="store_true", help="Skip clean git tree check (for testing only)")
     parser.add_argument("--no-hash-check", action="store_true", help="Skip frozen hashes check (for testing only)")
+    parser.add_argument("--rehearsal", action="store_true", help="Run in rehearsal mode (isolates log path and forces anchor branch to forward-anchors-rehearsal)")
 
     args = parser.parse_args()
+
+    if args.rehearsal:
+        if args.log_path == "forward/signals.jsonl":
+            args.log_path = "forward/rehearsal.jsonl"
+        if args.anchor_ledger == "forward/anchors.json":
+            args.anchor_ledger = "forward/rehearsal_anchors.json"
+        if args.git_branch == "forward-anchors":
+            args.git_branch = "forward-anchors-rehearsal"
+
+        prod_log = os.path.abspath(os.path.join(REPO_ROOT, "forward", "signals.jsonl"))
+        if os.path.abspath(args.log_path) == prod_log:
+            sys.exit("Error: Rehearsal mode strictly prohibits writing to production 'forward/signals.jsonl'.")
+        if args.git_branch == "forward-anchors":
+            sys.exit("Error: Rehearsal mode strictly prohibits pushing to production 'forward-anchors' branch.")
 
     if args.dry_run_days is not None:
         mt5 = init_mt5()
@@ -321,7 +338,8 @@ def main():
         git_branch=args.git_branch,
         poll_interval=args.poll_interval,
         check_git=not args.no_git_check,
-        check_frozen_hashes=not args.no_hash_check
+        check_frozen_hashes=not args.no_hash_check,
+        rehearsal=args.rehearsal
     )
 
 

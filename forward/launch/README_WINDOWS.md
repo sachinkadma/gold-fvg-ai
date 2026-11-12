@@ -92,22 +92,35 @@ robocopy $SourceDir $BackupDir signals.jsonl signals_buffer.json signals_anchor_
 ---
 
 ## 6. Mandatory 48–72h Live Rehearsal (Step F)
-Before initiating the permanent forward trading log, conduct a 48–72 hour drill on a throwaway rehearsal log:
+Before initiating the permanent forward trading log, conduct a 48–72 hour drill on an isolated rehearsal environment:
 
-1. **Start Rehearsal**:
+1. **Start Rehearsal (Isolated Mode)**:
    ```powershell
-   python forward/run_forward.py --forward-start-date "2026-11-12T00:00:00Z" --log-path forward/rehearsal.jsonl
+   python forward/run_forward.py --forward-start-date "2026-11-12T00:00:00Z" --rehearsal
    ```
+   *Isolation Guarantees*:
+   - Automatically writes to `forward/rehearsal.jsonl` (strictly prohibits writing to production `forward/signals.jsonl`).
+   - Automatically uses anchor ledger `forward/rehearsal_anchors.json`.
+   - Dedicated git anchor branch `forward-anchors-rehearsal` (strictly prohibits touching or pushing to `forward-anchors`).
+
 2. **Drill Actions**:
    - **Kill Process Drill**: Terminate the python process abruptly via Task Manager. Verify `run_forever.ps1` restarts the engine within 10 seconds and recovers pending orders / open positions from `rehearsal.jsonl`.
    - **Reboot Drill**: Restart the laptop while orders are pending. Verify Task Scheduler resumes execution and reconstructs internal state cleanly.
    - **Network Offline Drill**: Disconnect Wi-Fi / Ethernet for 30 minutes. Verify downtime is detected and logged as a `DOWNTIME_GAP` upon reconnection.
-3. **Rehearsal Verification**:
+
+3. **Rehearsal Audit & Verification**:
    ```powershell
-   python -c "from forward.logger import verify_chain; print(verify_chain('forward/rehearsal.jsonl'))"
-   python -c "from forward.logger import verify_against_anchor; print(verify_against_anchor('forward/rehearsal.jsonl', 'forward/rehearsal_anchors.json'))"
+   python forward/launch/rehearsal_check.py --log forward/rehearsal.jsonl --anchor-ledger forward/rehearsal_anchors.json
    ```
-   Both checks must return `True` / `CHAIN_VALID`.
+   *Audit Checks*:
+   - Cryptographic hash chain validity (`verify_chain()`).
+   - Anchor ledger consistency and truncation detection (`verify_against_anchor()`).
+   - Counts of each event type (`GENESIS`, `SIGNAL`, `SPREAD_OBS`, `FILL`, `CLOSE`, `GAP`).
+   - SIGNAL breakdown by `filter_status`.
+   - GAP breakdown: scheduled weekend/daily breaks vs unexpected downtime gaps.
+   - Candle timestamp uniqueness (zero duplicates).
+   - Zero missing 15m candles outside scheduled market breaks.
+   - Returns exit code 0 ONLY if all checks are completely clean.
 
 ---
 

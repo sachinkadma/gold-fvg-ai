@@ -154,3 +154,134 @@ def test_heartbeat_stale_feed_rule_suppressed_on_weekend(tmp_path):
     res_active = daemon.run_check_cycle(now_utc=t_tue_active)
     assert res_active["market_open"] is True
     assert res_active["stale_alert_triggered"] is True
+
+
+def test_rehearsal_run_never_pushes_to_forward_anchors(tmp_path, monkeypatch):
+    """
+    PRE-REHEARSAL CHECK TEST:
+    Verifies that a rehearsal run:
+    1. Enforces dedicated rehearsal log path (rejects signals.jsonl).
+    2. Enforces dedicated anchor branch 'forward-anchors-rehearsal' (rejects forward-anchors).
+    3. Git push attempts in rehearsal mode strictly target forward-anchors-rehearsal.
+    """
+    rehearsal_log = str(tmp_path / "rehearsal.jsonl")
+    rehearsal_anchors = str(tmp_path / "rehearsal_anchors.json")
+
+    # 1. Prohibit writing to production signals.jsonl
+    prod_log = os.path.join(REPO_ROOT, "forward", "signals.jsonl")
+    with pytest.raises(ValueError, match="strictly prohibits writing to production 'forward/signals.jsonl'"):
+        ForwardSignalLogger(
+            forward_start_date="2026-11-12T00:00:00Z",
+            log_path=prod_log,
+            rehearsal=True,
+            check_git=False,
+            check_frozen_hashes=False
+        )
+
+    # 2. Prohibit pushing to production forward-anchors branch
+    with pytest.raises(ValueError, match="strictly prohibits pushing to production 'forward-anchors' branch"):
+        ForwardSignalLogger(
+            forward_start_date="2026-11-12T00:00:00Z",
+            log_path=rehearsal_log,
+            git_branch="forward-anchors",
+            rehearsal=True,
+            check_git=False,
+            check_frozen_hashes=False
+        )
+
+    # 3. Clean instantiation defaults to 'forward-anchors-rehearsal'
+    logger = ForwardSignalLogger(
+        forward_start_date="2026-11-12T00:00:00Z",
+        log_path=rehearsal_log,
+        external_anchor_path=rehearsal_anchors,
+        rehearsal=True,
+        check_git=False,
+        check_frozen_hashes=False
+    )
+    assert logger.git_branch == "forward-anchors-rehearsal"
+
+    # 4. Intercept subprocess.run to verify the push target branch
+    pushed_branches = []
+
+    def mock_run(cmd, *args, **kwargs):
+        class DummyProc:
+            returncode = 0
+            stdout = "dummy_tree_or_commit_hash\n"
+            stderr = ""
+        # Capture git push commands
+        if isinstance(cmd, list) and "push" in cmd:
+            refspec = cmd[-1]
+            pushed_branches.append(refspec)
+        return DummyProc()
+
+    monkeypatch.setattr("subprocess.run", mock_run)
+    monkeypatch.setattr("subprocess.check_output", lambda *a, **k: "dummy_blob_hash\n")
+
+    # Trigger anchor push via logger
+    from forward.logger import push_external_anchor_to_git
+    with open(rehearsal_anchors, "w") as f:
+        json.dump([{"index": 0, "hash": "abc"}], f)
+
+    push_external_anchor_to_git(rehearsal_anchors, remote="origin", branch=logger.git_branch)
+
+    assert len(pushed_branches) == 1
+    assert "forward-anchors-rehearsal" in pushed_branches[0]
+    assert "forward-anchors:" not in pushed_branches[0]
+    assert pushed_branches[0] == "refs/heads/forward-anchors-rehearsal:refs/heads/forward-anchors-rehearsal"
+
+
+def test_rehearsal_check_tool(tmp_path):
+    """
+    Verifies forward/launch/rehearsal_check.py:
+    1. Returns exit code 0 on clean rehearsal log with no downtime gaps or duplicates.
+    2. Returns exit code 1 on log with unexpected downtime gaps outside market breaks.
+    """
+    from forward.launch.rehearsal_check import audit_rehearsal_log
+
+    clean_log = str(tmp_path / "clean_rehearsal.jsonl")
+    clean_anchors = str(tmp_path / "clean_anchors.json")
+
+    logger = ForwardSignalLogger(
+        forward_start_date="2026-11-12T00:00:00Z",
+        log_path=clean_log,
+        external_anchor_path=clean_anchors,
+        rehearsal=True,
+        check_git=False,
+        check_frozen_hashes=False
+    )
+    # Add a clean weekend gap
+    t_start = "2026-11-13T22:00:00+00:00"
+    t_end = "2026-11-15T23:00:00+00:00"
+    logger._append_event("GAP", t_end, {
+        "gap_type": "WEEKEND_MARKET_CLOSE",
+        "gap_start_utc": t_start,
+        "gap_end_utc": t_end,
+        "elapsed_minutes": 2940,
+        "missing_bars": 196
+    })
+
+    # Test clean audit
+    assert audit_rehearsal_log(clean_log, clean_anchors) is True
+
+    # Now add an unscheduled downtime gap
+    dirty_log = str(tmp_path / "dirty_rehearsal.jsonl")
+    dirty_anchors = str(tmp_path / "dirty_anchors.json")
+    logger_dirty = ForwardSignalLogger(
+        forward_start_date="2026-11-12T00:00:00Z",
+        log_path=dirty_log,
+        external_anchor_path=dirty_anchors,
+        rehearsal=True,
+        check_git=False,
+        check_frozen_hashes=False
+    )
+    logger_dirty._append_event("GAP", "2026-11-12T14:00:00+00:00", {
+        "gap_type": "DOWNTIME_GAP",
+        "gap_start_utc": "2026-11-12T12:00:00+00:00",
+        "gap_end_utc": "2026-11-12T14:00:00+00:00",
+        "elapsed_minutes": 120,
+        "missing_bars": 8
+    })
+
+    # Test dirty audit
+    assert audit_rehearsal_log(dirty_log, dirty_anchors) is False
+

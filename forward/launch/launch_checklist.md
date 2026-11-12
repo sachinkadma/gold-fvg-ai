@@ -7,7 +7,7 @@ Strict step-by-step pre-flight procedures to execute before initiating the forwa
   ```powershell
   git clone https://github.com/sachinkadma/gold-fvg-ai.git forward_runner
   cd forward_runner
-  git checkout forward-v8
+  git checkout forward-v9
   ```
 - Verify git status is completely clean:
   ```powershell
@@ -38,7 +38,18 @@ Ensure all required environment variables are set in the Windows environment or 
   # Must return the remote branch commit hash without error
   ```
 
-## 5. Pre-Flight Protocol Audit Update (MANDATORY BEFORE FIRST RUN)
+## 5. Mandatory 48–72h Rehearsal Drill & Verification
+- Run rehearsal mode to confirm 24x5 live stability without touching production logs or branches:
+  ```powershell
+  python forward/run_forward.py --forward-start-date "2026-11-12T00:00:00Z" --rehearsal
+  ```
+- Run the read-only rehearsal check:
+  ```powershell
+  python forward/launch/rehearsal_check.py --log forward/rehearsal.jsonl --anchor-ledger forward/rehearsal_anchors.json
+  ```
+  *Must return EXIT 0 (all checks clean: valid chain, valid anchors, no duplicate candles, no unexpected downtime).*
+
+## 6. Pre-Flight Protocol Audit Update (MANDATORY BEFORE FIRST RUN)
 Before starting the live forward run, update `forward/PROTOCOL_NOTES.md` with:
 1. The **actual forward start date and time** (`FORWARD_START_DATE`).
 2. The **exact gap in hours and days** between the TEST run log (`2026-11-11T13:18:05Z`) and the actual start date.
@@ -51,7 +62,7 @@ Before starting the live forward run, update `forward/PROTOCOL_NOTES.md` with:
    git push origin <branch>
    ```
 
-## 6. Launch Execution
+## 7. Launch Execution
 - Start the supervisor process:
   ```powershell
   .\forward\launch\run_forever.ps1
