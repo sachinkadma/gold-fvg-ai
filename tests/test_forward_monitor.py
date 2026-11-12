@@ -236,3 +236,180 @@ def test_telegram_alert_safe_failure():
 
     ok_trade = alert_trade_closed({"signal_id": "SIG-0001", "net_r": 1.0}, token="dummy", chat_id="123")
     assert ok_trade is False
+
+
+def _create_chain_with_trades(log_path, trade_r_list, start_date="2026-11-12T00:00:00Z"):
+    """Helper to build a strictly valid event hash chain with specified trade net_r values."""
+    logger = ForwardSignalLogger(
+        forward_start_date=start_date,
+        log_path=log_path,
+        check_git=False,
+        check_frozen_hashes=False,
+        min_buffer_warmup=1,
+        track_spread=True
+    )
+    start_dt = pd.Timestamp(start_date)
+    for i, r in enumerate(trade_r_list):
+        t_trade = start_dt + pd.DateOffset(days=i * 20, hours=10)
+        t_str = t_trade.isoformat()
+        t_exit = (t_trade + pd.Timedelta(hours=2)).isoformat()
+        sig_id = f"SIG-{i+1:04d}"
+
+        logger._append_event("SIGNAL", t_str, {
+            "signal_id": sig_id, "signal_num": i + 1, "timestamp_ny": t_str,
+            "direction": "BUY" if i % 2 == 0 else "SELL", "entry": 2600.0, "sl": 2580.0, "tp": 2640.0,
+            "risk_dist": 20.0, "passed_primary": True, "filter_status": "PASSED_PRIMARY"
+        })
+        logger._append_event("SPREAD_OBS", t_str, {
+            "trigger_event": "SIGNAL", "ref_id": sig_id, "realized_spread_pts": 0.35, "source": "BAR"
+        })
+        logger._append_event("FILL", t_str, {
+            "signal_id": sig_id, "direction": "BUY" if i % 2 == 0 else "SELL",
+            "fill_price": 2600.0, "sl": 2580.0, "tp": 2640.0, "planned_risk_dist": 20.0
+        })
+        logger._append_event("SPREAD_OBS", t_str, {
+            "trigger_event": "FILL", "ref_id": sig_id, "realized_spread_pts": 0.35, "source": "BAR"
+        })
+        logger._append_event("CLOSE", t_exit, {
+            "signal_id": sig_id, "direction": "BUY" if i % 2 == 0 else "SELL",
+            "entry_price": 2600.0, "exit_price": 2640.0 if r > 0 else 2580.0,
+            "exit_reason": "TP" if r > 0 else "SL", "net_r": round(float(r), 3),
+            "fill_time_utc": t_str, "exit_time_utc": t_exit
+        })
+    valid, msg, _ = verify_chain(log_path)
+    assert valid is True, f"Chain invalid: {msg}"
+    return log_path
+
+
+def test_gate_boundary_n11_continue(tmp_path):
+    log_file = str(tmp_path / "n11.jsonl")
+    r_list = [1.9, -1.0] * 5 + [1.9]  # 11 trades
+    _create_chain_with_trades(log_file, r_list)
+    mon = ForwardMonitor(log_path=log_file)
+    status = mon.evaluate(current_time="2027-06-01T00:00:00Z")
+    assert status["metrics"]["n_trades"] == 11
+    assert status["verdict"] == "CONTINUE"
+
+
+def test_gate_boundary_n12_fail_fwd(tmp_path):
+    log_file = str(tmp_path / "n12_fail.jsonl")
+    r_list = [1.0] * 6 + [-1.05] * 6  # 12 trades, mean = -0.025 <= 0
+    _create_chain_with_trades(log_file, r_list)
+    mon = ForwardMonitor(log_path=log_file)
+    status = mon.evaluate(current_time="2027-06-01T00:00:00Z")
+    assert status["metrics"]["n_trades"] == 12
+    assert status["verdict"] == "FAIL_FWD"
+    assert "Early-fail latched at N=12" in status["verdict_detail"]
+
+
+def test_gate_boundary_n12_continue(tmp_path):
+    log_file = str(tmp_path / "n12_cont.jsonl")
+    r_list = [1.9] * 6 + [-1.0] * 6  # 12 trades, mean = +0.45 > 0
+    _create_chain_with_trades(log_file, r_list)
+    mon = ForwardMonitor(log_path=log_file)
+    status = mon.evaluate(current_time="2027-06-01T00:00:00Z")
+    assert status["metrics"]["n_trades"] == 12
+    assert status["verdict"] == "CONTINUE"
+    assert "Early-fail avoided at N=12" in status["verdict_detail"]
+
+
+def test_gate_boundary_n13_negative_after_positive_n12_continues(tmp_path):
+    log_file = str(tmp_path / "n13_cont.jsonl")
+    # First 12 trades: 6 wins of 1.9, 6 losses of -1.0 (mean = +0.45 > 0)
+    # 13th trade: massive loss of -10.0 => cumulative mean becomes negative!
+    r_list = [1.9] * 6 + [-1.0] * 6 + [-10.0]
+    _create_chain_with_trades(log_file, r_list)
+    mon = ForwardMonitor(log_path=log_file)
+    status = mon.evaluate(current_time="2027-07-01T00:00:00Z")
+    assert status["metrics"]["n_trades"] == 13
+    assert status["metrics"]["expectancy_r"] < 0.0  # Cumulative is negative
+    assert status["verdict"] == "CONTINUE"  # But verdict remains CONTINUE (never re-evaluated for fail at N=13..19)
+
+
+def test_gate_boundary_n19_continue(tmp_path):
+    log_file = str(tmp_path / "n19.jsonl")
+    r_list = [1.9] * 10 + [-1.0] * 9  # 19 trades, positive at N=12
+    _create_chain_with_trades(log_file, r_list)
+    mon = ForwardMonitor(log_path=log_file)
+    status = mon.evaluate(current_time="2027-11-01T00:00:00Z")
+    assert status["metrics"]["n_trades"] == 19
+    assert status["verdict"] == "CONTINUE"
+
+
+def test_gate_boundary_n20_pass_fwd(tmp_path):
+    log_file = str(tmp_path / "n20_pass.jsonl")
+    # 20 trades with high win rate: 15 wins of 1.95, 5 losses of -1.0 (mean = +1.2125R)
+    r_list = [1.95] * 15 + [-1.0] * 5
+    _create_chain_with_trades(log_file, r_list)
+    mon = ForwardMonitor(log_path=log_file)
+    status = mon.evaluate(current_time="2028-01-01T00:00:00Z")
+    assert status["metrics"]["n_trades"] == 20
+    assert status["metrics"]["expectancy_r"] > 0.0
+    assert status["metrics"]["ci_95"][0] > 0.0
+    assert status["verdict"] == "PASS_FWD"
+
+
+def test_gate_boundary_n20_ci_lower_nonpositive_inconclusive_final(tmp_path):
+    log_file = str(tmp_path / "n20_inconc.jsonl")
+    # 20 trades with tiny positive expectancy: 10 wins of 1.02, 10 losses of -1.0 (mean = +0.01R)
+    r_list = [1.02] * 10 + [-1.0] * 10
+    _create_chain_with_trades(log_file, r_list)
+    mon = ForwardMonitor(log_path=log_file)
+    status = mon.evaluate(current_time="2028-01-01T00:00:00Z")
+    assert status["metrics"]["n_trades"] == 20
+    assert status["metrics"]["expectancy_r"] > 0.0
+    assert status["metrics"]["ci_95"][0] <= 0.0
+    assert status["verdict"] == "INCONCLUSIVE-FINAL"
+
+
+def test_gate_boundary_n20_exp_nonpositive_fail_fwd(tmp_path):
+    log_file = str(tmp_path / "n20_fail.jsonl")
+    # First 12: 6 wins of 1.9, 6 losses of -1.0 (mean = +0.45 > 0, passes N=12)
+    # Next 8: all losses of -1.0 (sum = 6*1.9 - 14*1.0 = 11.4 - 14 = -2.6 <= 0)
+    r_list = [1.9] * 6 + [-1.0] * 6 + [-1.0] * 8
+    _create_chain_with_trades(log_file, r_list)
+    mon = ForwardMonitor(log_path=log_file)
+    status = mon.evaluate(current_time="2028-01-01T00:00:00Z")
+    assert status["metrics"]["n_trades"] == 20
+    assert status["metrics"]["expectancy_r"] <= 0.0
+    assert status["verdict"] == "FAIL_FWD"
+
+
+def test_gate_boundary_30_months_n15_exp_positive_inconclusive_final(tmp_path):
+    log_file = str(tmp_path / "m30_n15.jsonl")
+    # 15 trades with positive expectancy, evaluated after 31 months
+    r_list = [1.9] * 10 + [-1.0] * 5
+    _create_chain_with_trades(log_file, r_list)
+    mon = ForwardMonitor(log_path=log_file)
+    # 31 months after 2026-11-12 is 2029-06-12
+    status = mon.evaluate(current_time="2029-06-15T00:00:00Z")
+    assert status["time_limit_reached"] is True
+    assert status["metrics"]["n_trades"] == 15
+    assert status["verdict"] == "INCONCLUSIVE-FINAL"
+
+
+def test_gate_boundary_30_months_n8_inconclusive_final(tmp_path):
+    log_file = str(tmp_path / "m30_n8.jsonl")
+    # 8 trades (< 12) evaluated after 31 months
+    r_list = [1.9] * 4 + [-1.0] * 4
+    _create_chain_with_trades(log_file, r_list)
+    mon = ForwardMonitor(log_path=log_file)
+    status = mon.evaluate(current_time="2029-06-15T00:00:00Z")
+    assert status["time_limit_reached"] is True
+    assert status["metrics"]["n_trades"] == 8
+    assert status["verdict"] == "INCONCLUSIVE-FINAL"
+
+
+def test_gate_boundary_21st_trade_ignored(tmp_path):
+    log_file = str(tmp_path / "n21.jsonl")
+    # 20 pass trades, plus a 21st extreme trade
+    r_list = [1.95] * 15 + [-1.0] * 5 + [-99.0]
+    _create_chain_with_trades(log_file, r_list)
+    mon = ForwardMonitor(log_path=log_file)
+    status = mon.evaluate(current_time="2028-01-01T00:00:00Z")
+    # Capped at exactly 20 trades
+    assert status["metrics"]["n_trades"] == 20
+    assert status["verdict"] == "PASS_FWD"
+    # Ensure -99.0 was not included in total_r or expectancy
+    assert status["metrics"]["total_r"] > 0.0
+

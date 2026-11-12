@@ -231,7 +231,7 @@ class ForwardMonitor:
                         }
 
         # Match CLOSE records to valid signals
-        closed_trades = []
+        raw_closed_trades = []
         latest_event_time = start_dt
 
         for r in records:
@@ -254,7 +254,7 @@ class ForwardMonitor:
                     sig_info = signals_map[sig_id]
                     close_time_str = d.get("exit_time_utc") or r.get("timestamp_utc")
                     direction = d.get("direction") or sig_info["direction"]
-                    closed_trades.append({
+                    raw_closed_trades.append({
                         "signal_id": sig_id,
                         "direction": direction,
                         "net_r": float(d.get("net_r", 0.0)),
@@ -263,6 +263,10 @@ class ForwardMonitor:
                         "exit_price": d.get("exit_price"),
                         "close_time": close_time_str
                     })
+
+        # Cap sample at exactly TARGET_N_FORWARD (20 trades). Any 21st+ trade is ignored.
+        closed_trades = raw_closed_trades[:TARGET_N_FORWARD]
+        total_closed_recorded = len(raw_closed_trades)
 
         # 5. Compute elapsed time and time limit check (30 months)
         if current_time is not None:
@@ -279,7 +283,7 @@ class ForwardMonitor:
         elapsed_months = elapsed_days / DAYS_PER_MONTH
         time_limit_reached = elapsed_months >= MAX_DURATION_MONTHS
 
-        # 6. Compute statistical metrics
+        # 6. Compute statistical metrics on the active sample (capped at 20)
         n_trades = len(closed_trades)
         if n_trades > 0:
             r_vals = np.array([t["net_r"] for t in closed_trades], dtype=float)
@@ -308,6 +312,16 @@ class ForwardMonitor:
             profit_factor = 0.0
             ci_lower, ci_upper = 0.0, 0.0
 
+        # Check early-fail gate at N=12 (latched using the first 12 closed trades in chain order)
+        n12_evaluated = (n_trades >= EARLY_FAIL_N)
+        if n12_evaluated:
+            r_12 = np.array([t["net_r"] for t in closed_trades[:EARLY_FAIL_N]], dtype=float)
+            exp_12 = round(float(np.mean(r_12)), 3)
+            n12_failed = (exp_12 <= 0.0)
+        else:
+            exp_12 = None
+            n12_failed = False
+
         # 7. Long/Short breakdown [OBSERVATION ONLY - NOT FOR DECISIONS]
         long_trades = [t for t in closed_trades if t["direction"] == "BUY"]
         short_trades = [t for t in closed_trades if t["direction"] == "SELL"]
@@ -331,68 +345,58 @@ class ForwardMonitor:
             "short": calc_dir_stats(short_trades)
         }
 
-        # 8. Evaluate Gates per PREREG Section 5 wording
+        # 8. Evaluate Gates per PREREG Section 5 wording:
+        # - Early-fail evaluated ONLY at N=12 and at end.
+        # - End = 20th closed trade OR 30 months from genesis start date.
+        # - Terminal once a final status is reached.
         verdict = "CONTINUE"
         verdict_detail = ""
 
-        if time_limit_reached:
-            # End condition reached via 30 months
+        # Gate 1: Did early-fail latch at N=12?
+        if n12_failed:
+            verdict = "FAIL_FWD"
+            verdict_detail = (
+                f"FAIL_FWD: Early-fail latched at N={EARLY_FAIL_N} trades with "
+                f"net expectancy={exp_12:+.3f}R <= 0. Terminal verdict."
+            )
+        # Gate 2: End condition reached (N=20 closed trades OR 30 months)
+        elif n_trades >= TARGET_N_FORWARD or time_limit_reached:
             if n_trades >= TARGET_N_FORWARD and expectancy_r > 0.0 and ci_lower > 0.0:
                 verdict = "PASS_FWD"
                 verdict_detail = (
-                    f"PASS_FWD at 30-month end: N={n_trades} >= {TARGET_N_FORWARD}, "
-                    f"expectancy={expectancy_r:+.3f}R > 0, 95% CI lower bound={ci_lower:+.3f}R > 0."
+                    f"PASS_FWD at end: N={n_trades} >= {TARGET_N_FORWARD}, "
+                    f"net expectancy={expectancy_r:+.3f}R > 0, and monthly-block 95% CI lower bound={ci_lower:+.3f}R > 0."
                 )
             elif n_trades >= EARLY_FAIL_N and expectancy_r <= 0.0:
                 verdict = "FAIL_FWD"
                 verdict_detail = (
-                    f"FAIL_FWD at 30-month end: N={n_trades} >= {EARLY_FAIL_N} and "
-                    f"net expectancy={expectancy_r:+.3f}R <= 0."
+                    f"FAIL_FWD at end: N={n_trades} >= {EARLY_FAIL_N} with net expectancy={expectancy_r:+.3f}R <= 0."
                 )
             else:
                 verdict = "INCONCLUSIVE-FINAL"
-                verdict_detail = (
-                    f"INCONCLUSIVE-FINAL: 30-month duration elapsed with N={n_trades} "
-                    f"(< {TARGET_N_FORWARD} required or CI lower <= 0). Strategy research CLOSED. No further extension."
-                )
-        elif n_trades >= TARGET_N_FORWARD:
-            # End condition reached via N_forward = 20 executed trades
-            if expectancy_r > 0.0 and ci_lower > 0.0:
-                verdict = "PASS_FWD"
-                verdict_detail = (
-                    f"PASS_FWD: N={n_trades} >= {TARGET_N_FORWARD}, expectancy={expectancy_r:+.3f}R > 0, "
-                    f"and monthly-block 95% CI lower bound={ci_lower:+.3f}R > 0."
-                )
-            elif expectancy_r <= 0.0:
-                verdict = "FAIL_FWD"
-                verdict_detail = (
-                    f"FAIL_FWD: N={n_trades} >= {TARGET_N_FORWARD} with net expectancy={expectancy_r:+.3f}R <= 0."
-                )
-            else:
-                verdict = "INCONCLUSIVE-FINAL"
-                verdict_detail = (
-                    f"INCONCLUSIVE-FINAL: N={n_trades} reached with expectancy={expectancy_r:+.3f}R > 0 "
-                    f"but 95% CI lower bound={ci_lower:+.3f}R <= 0. Strategy research CLOSED as INCONCLUSIVE-FINAL."
-                )
-        elif n_trades == EARLY_FAIL_N:
-            # Early fail check: evaluated specifically at N=12 per Sec 5
-            if expectancy_r <= 0.0:
-                verdict = "FAIL_FWD"
-                verdict_detail = (
-                    f"FAIL_FWD (early-fail): N={n_trades} reached with net expectancy={expectancy_r:+.3f}R <= 0."
-                )
-            else:
-                verdict = "CONTINUE"
-                verdict_detail = (
-                    f"CONTINUE: N={n_trades} reached with positive expectancy={expectancy_r:+.3f}R. "
-                    f"Early-fail avoided; proceeding toward N={TARGET_N_FORWARD}."
-                )
+                if n_trades >= TARGET_N_FORWARD:
+                    verdict_detail = (
+                        f"INCONCLUSIVE-FINAL at end: N={n_trades} reached with net expectancy={expectancy_r:+.3f}R > 0 "
+                        f"but 95% CI lower bound={ci_lower:+.3f}R <= 0. Strategy research CLOSED as INCONCLUSIVE-FINAL."
+                    )
+                else:
+                    verdict_detail = (
+                        f"INCONCLUSIVE-FINAL at end: 30-month duration elapsed with N={n_trades} (< {TARGET_N_FORWARD} required). "
+                        f"Strategy research CLOSED as INCONCLUSIVE-FINAL."
+                    )
+        # Gate 3: Ongoing evaluation (N < 20 and elapsed < 30 months)
         else:
             verdict = "CONTINUE"
-            verdict_detail = (
-                f"CONTINUE: Forward stage active. N={n_trades}/{TARGET_N_FORWARD} trades executed. "
-                f"Elapsed: {elapsed_months:.1f}/{MAX_DURATION_MONTHS:.1f} months."
-            )
+            if n_trades >= EARLY_FAIL_N:
+                verdict_detail = (
+                    f"CONTINUE: Early-fail avoided at N={EARLY_FAIL_N} (exp_12={exp_12:+.3f}R > 0). "
+                    f"N={n_trades}/{TARGET_N_FORWARD} trades executed. Elapsed: {elapsed_months:.1f}/{MAX_DURATION_MONTHS:.1f} months."
+                )
+            else:
+                verdict_detail = (
+                    f"CONTINUE: Forward stage active. N={n_trades}/{TARGET_N_FORWARD} trades executed. "
+                    f"Elapsed: {elapsed_months:.1f}/{MAX_DURATION_MONTHS:.1f} months."
+                )
 
         status_result = {
             "verdict": verdict,
