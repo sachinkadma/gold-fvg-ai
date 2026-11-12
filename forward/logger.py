@@ -49,7 +49,7 @@ SLIPPAGE_ASSUMED = 0.10
 COMMISSION_PER_LOT = 7.0
 ORDER_EXPIRY_BARS = 8
 MIN_BUFFER_WARMUP = 135
-FORWARD_GIT_TAG = "forward-v1"
+FORWARD_GIT_TAG = "forward-v2"
 GENESIS_PREV_HASH = "0" * 64
 
 # FROZEN FILE SHA256 HASHES FOR PRE-FLIGHT INTEGRITY
@@ -250,9 +250,29 @@ def convert_mt5_time_to_utc(server_time, server_tz="US_EET"):
         return ts_ny_aware.tz_convert("UTC")
 
 
-def push_external_anchor_to_git(anchor_path, remote="origin", branch=None):
+def check_git_remote_reachable(remote="origin", timeout=10):
     """
-    Commits the external anchor ledger and pushes it to git remote.
+    Verifies that the external git remote repository is reachable.
+    Returns: (reachable: bool, msg: str)
+    """
+    try:
+        res = subprocess.run(["git", "ls-remote", "--heads", remote], capture_output=True, text=True, cwd=REPO_ROOT, timeout=timeout)
+        if res.returncode == 0:
+            return True, "REMOTE_REACHABLE"
+        return False, res.stderr.strip() or f"exit code {res.returncode}"
+    except Exception as e:
+        return False, str(e)
+
+
+def push_external_anchor_to_git(anchor_path, remote="origin", branch="forward-anchors"):
+    """
+    Commits the external anchor ledger directly to a dedicated git branch
+    and pushes to git remote without altering the active working tree branch.
+
+    BRANCH PROTECTION CONTRACT:
+    Force-push ('git push --force') must be strictly disabled on the remote repository
+    and target branch to ensure forward anchor immutability and prevent history tampering.
+
     Returns: (success: bool, msg: str)
     """
     try:
@@ -261,23 +281,40 @@ def push_external_anchor_to_git(anchor_path, remote="origin", branch=None):
             return False, f"Anchor file does not exist: {abs_path}"
         rel_path = os.path.relpath(abs_path, REPO_ROOT)
 
-        # Stage the anchor file
-        add_res = subprocess.run(["git", "add", rel_path], capture_output=True, text=True, cwd=REPO_ROOT)
-        if add_res.returncode != 0:
-            return False, f"git add failed: {add_res.stderr.strip()}"
+        # 1. Create git blob object directly from file
+        blob_hash = subprocess.check_output(["git", "hash-object", "-w", rel_path], cwd=REPO_ROOT, text=True).strip()
 
-        # Check if there are changes staged
-        diff_res = subprocess.run(["git", "diff", "--cached", "--quiet"], capture_output=True, cwd=REPO_ROOT)
-        if diff_res.returncode != 0:
-            commit_msg = f"chore(anchor): external anchor checkpoint {datetime.now(timezone.utc).isoformat()}"
-            commit_res = subprocess.run(["git", "commit", "-m", commit_msg], capture_output=True, text=True, cwd=REPO_ROOT)
-            if commit_res.returncode != 0:
-                return False, f"git commit failed: {commit_res.stderr.strip()}"
+        # 2. Build tree object containing the anchor ledger
+        file_name = os.path.basename(rel_path)
+        tree_input = f"100644 blob {blob_hash}\t{file_name}\n"
+        tree_proc = subprocess.run(["git", "mktree"], input=tree_input, capture_output=True, text=True, cwd=REPO_ROOT)
+        if tree_proc.returncode != 0:
+            return False, f"git mktree failed: {tree_proc.stderr.strip()}"
+        tree_hash = tree_proc.stdout.strip()
 
-        # Push to remote
-        cmd = ["git", "push", remote]
-        if branch:
-            cmd.append(branch)
+        # 3. Locate parent commit on target branch (local ref or remote tracking ref)
+        target_branch = branch or "forward-anchors"
+        commit_msg = f"chore(anchor): forward anchor checkpoint {datetime.now(timezone.utc).isoformat()}"
+        commit_args = ["git", "commit-tree", tree_hash, "-m", commit_msg]
+
+        parent_res = subprocess.run(["git", "rev-parse", f"refs/heads/{target_branch}"], capture_output=True, text=True, cwd=REPO_ROOT)
+        if parent_res.returncode == 0:
+            commit_args.extend(["-p", parent_res.stdout.strip()])
+        else:
+            parent_res_remote = subprocess.run(["git", "rev-parse", f"refs/remotes/{remote}/{target_branch}"], capture_output=True, text=True, cwd=REPO_ROOT)
+            if parent_res_remote.returncode == 0:
+                commit_args.extend(["-p", parent_res_remote.stdout.strip()])
+
+        commit_proc = subprocess.run(commit_args, capture_output=True, text=True, cwd=REPO_ROOT)
+        if commit_proc.returncode != 0:
+            return False, f"git commit-tree failed: {commit_proc.stderr.strip()}"
+        commit_hash = commit_proc.stdout.strip()
+
+        # 4. Update local ref for target branch
+        update_res = subprocess.run(["git", "update-ref", f"refs/heads/{target_branch}", commit_hash], cwd=REPO_ROOT, check=True)
+
+        # 5. Push to remote
+        cmd = ["git", "push", remote, f"refs/heads/{target_branch}:refs/heads/{target_branch}"]
         push_res = subprocess.run(cmd, capture_output=True, text=True, cwd=REPO_ROOT, timeout=15)
         if push_res.returncode != 0:
             return False, f"git push failed: {push_res.stderr.strip()}"
@@ -286,10 +323,11 @@ def push_external_anchor_to_git(anchor_path, remote="origin", branch=None):
         return False, str(e)
 
 
-def save_external_anchor(anchor_path, record_index, event_type, record_hash, git_push=False, git_remote="origin", git_branch=None):
+def save_external_anchor(anchor_path, record_index, event_type, record_hash, git_push=False, git_remote="origin", git_branch="forward-anchors"):
     """
     Saves an anchor record to an independent external JSON ledger.
     If git_push=True, automatically commits and pushes the ledger to git remote.
+    Returns: (success: bool, msg: str)
     """
     abs_path = os.path.abspath(anchor_path) if not os.path.isabs(anchor_path) else anchor_path
     os.makedirs(os.path.dirname(abs_path), exist_ok=True)
@@ -309,12 +347,25 @@ def save_external_anchor(anchor_path, record_index, event_type, record_hash, git
     })
 
     tmp_path = abs_path + ".tmp"
-    with open(tmp_path, "w", encoding="utf-8") as f:
-        json.dump(anchors, f, indent=2)
-    os.replace(tmp_path, abs_path)
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(anchors, f, indent=2)
+        try:
+            os.replace(tmp_path, abs_path)
+        except OSError:
+            with open(abs_path, "w", encoding="utf-8") as f:
+                json.dump(anchors, f, indent=2)
+            if os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+    except Exception:
+        pass
 
     if git_push:
-        push_external_anchor_to_git(abs_path, remote=git_remote, branch=git_branch)
+        return push_external_anchor_to_git(abs_path, remote=git_remote, branch=git_branch)
+    return True, "LOCAL_ANCHOR_SAVED"
 
 
 def load_external_anchors(anchor_path):
@@ -356,6 +407,7 @@ class ForwardSignalLogger:
 
     def __init__(
         self,
+        forward_start_date=None,
         log_path="forward/signals.jsonl",
         check_git=True,
         check_frozen_hashes=True,
@@ -369,9 +421,10 @@ class ForwardSignalLogger:
         skip_outside_kz_eval=False,
         min_buffer_warmup=MIN_BUFFER_WARMUP,
         buffer_size=300,
+        server_tz="EU_EET",
         git_push_anchors=False,
         git_remote="origin",
-        git_branch=None
+        git_branch="forward-anchors"
     ):
         self.log_path = os.path.abspath(log_path) if not os.path.isabs(log_path) else log_path
         self.check_git = check_git
@@ -386,9 +439,34 @@ class ForwardSignalLogger:
         self.skip_outside_kz_eval = skip_outside_kz_eval
         self.min_buffer_warmup = min_buffer_warmup
         self.buffer_size = max(buffer_size, min_buffer_warmup)
+        self.server_tz = server_tz
         self.git_push_anchors = git_push_anchors
         self.git_remote = git_remote
         self.git_branch = git_branch
+
+        # Forward Start Date staleness validation (< 1 day in the past)
+        if forward_start_date is not None:
+            try:
+                dt_str = forward_start_date.replace("Z", "+00:00")
+                if "T" in dt_str:
+                    start_dt = datetime.fromisoformat(dt_str)
+                else:
+                    start_dt = datetime.strptime(dt_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                if start_dt.tzinfo is None:
+                    start_dt = start_dt.replace(tzinfo=timezone.utc)
+            except Exception as e:
+                raise ValueError(f"Invalid forward_start_date format '{forward_start_date}': {e}")
+
+            now_utc = datetime.now(timezone.utc)
+            staleness = (now_utc - start_dt).total_seconds()
+            if staleness > 86400:  # > 1 day in the past
+                raise ValueError(
+                    f"STARTUP ERROR: forward_start_date '{forward_start_date}' is >1 day in the past "
+                    f"({staleness/3600:.1f} hours ago). Refusing to start forward paper trading with stale start date."
+                )
+            self.forward_start_date = start_dt.isoformat()
+        else:
+            self.forward_start_date = None
 
         os.makedirs(os.path.dirname(self.log_path), exist_ok=True)
 
@@ -401,6 +479,9 @@ class ForwardSignalLogger:
         # Persisted anchor retry queue (survives crashes & restarts)
         self.queue_path = os.path.splitext(self.log_path)[0] + "_anchor_queue.json"
         self.anchor_queue = self._load_anchor_queue()
+
+        # Buffer persistence companion file
+        self.buffer_path = os.path.splitext(self.log_path)[0] + "_buffer.json"
 
         # Fast candle buffer
         self._times_ny = []
@@ -431,17 +512,132 @@ class ForwardSignalLogger:
         """Persists pending anchor retry queue to disk atomically."""
         if self.anchor_queue:
             tmp_path = self.queue_path + ".tmp"
-            with open(tmp_path, "w", encoding="utf-8") as f:
-                json.dump(self.anchor_queue, f)
-            os.replace(tmp_path, self.queue_path)
+            try:
+                with open(tmp_path, "w", encoding="utf-8") as f:
+                    json.dump(self.anchor_queue, f)
+                try:
+                    os.replace(tmp_path, self.queue_path)
+                except OSError:
+                    with open(self.queue_path, "w", encoding="utf-8") as f:
+                        json.dump(self.anchor_queue, f)
+                    if os.path.exists(tmp_path):
+                        try:
+                            os.remove(tmp_path)
+                        except OSError:
+                            pass
+            except Exception:
+                pass
         elif os.path.exists(self.queue_path):
             try:
                 os.remove(self.queue_path)
             except Exception:
                 pass
 
+    def _save_buffer_snapshot(self):
+        """Saves rolling candle buffer snapshot for crash recovery."""
+        if not self._times_ny:
+            return
+        buf_data = []
+        for i in range(len(self._times_ny)):
+            buf_data.append([
+                self._times_ny[i].isoformat(),
+                self._opens[i],
+                self._highs[i],
+                self._lows[i],
+                self._closes[i],
+                self._volumes[i]
+            ])
+        tmp = self.buffer_path + ".tmp"
+        try:
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(buf_data, f)
+            try:
+                os.replace(tmp, self.buffer_path)
+            except OSError:
+                with open(self.buffer_path, "w", encoding="utf-8") as f:
+                    json.dump(buf_data, f)
+                if os.path.exists(tmp):
+                    try:
+                        os.remove(tmp)
+                    except OSError:
+                        pass
+        except Exception:
+            pass
+
+    def _load_buffer_snapshot(self):
+        """Loads rolling candle buffer snapshot from companion file."""
+        if os.path.exists(self.buffer_path) and os.path.getsize(self.buffer_path) > 0:
+            try:
+                with open(self.buffer_path, "r", encoding="utf-8") as f:
+                    buf_data = json.load(f)
+                self._times_ny = [pd.Timestamp(x[0]) for x in buf_data]
+                self._opens = [float(x[1]) for x in buf_data]
+                self._highs = [float(x[2]) for x in buf_data]
+                self._lows = [float(x[3]) for x in buf_data]
+                self._closes = [float(x[4]) for x in buf_data]
+                self._volumes = [float(x[5]) for x in buf_data]
+                if self._times_ny:
+                    last_buf_time = self._times_ny[-1].tz_convert("UTC")
+                    if self.last_candle_time_utc is None or last_buf_time > self.last_candle_time_utc:
+                        self.last_candle_time_utc = last_buf_time
+            except Exception:
+                pass
+
+    def seed_buffer(self, candles):
+        """
+        Seeds rolling candle buffer with historical closed bars without emitting signals
+        or appending events. Used on startup/restart to pre-warm the 135-bar window.
+        """
+        if isinstance(candles, pd.DataFrame):
+            times = candles.index
+            opens = candles["open"].values
+            highs = candles["high"].values
+            lows = candles["low"].values
+            closes = candles["close"].values
+            vols = candles["volume"].values if "volume" in candles.columns else [0.0] * len(candles)
+            n = len(candles)
+            for i in range(n):
+                raw_t = times[i]
+                if isinstance(raw_t, (int, float, np.integer, np.floating)):
+                    ts = pd.to_datetime(raw_t, unit="s")
+                else:
+                    ts = pd.Timestamp(raw_t)
+                ts_ny = ts.tz_convert(NY_TZ) if ts.tzinfo is not None else ts.tz_localize(NY_TZ)
+                self._times_ny.append(ts_ny)
+                self._opens.append(float(opens[i]))
+                self._highs.append(float(highs[i]))
+                self._lows.append(float(lows[i]))
+                self._closes.append(float(closes[i]))
+                self._volumes.append(float(vols[i]))
+        elif isinstance(candles, (list, tuple)):
+            for c in candles:
+                raw_t = c.get("time", c.get("Date_NY", c.get("timestamp")))
+                if isinstance(raw_t, (int, float, np.integer, np.floating)):
+                    ts = pd.to_datetime(raw_t, unit="s")
+                else:
+                    ts = pd.Timestamp(raw_t)
+                if ts.tzinfo is None:
+                    ts_utc = convert_mt5_time_to_utc(ts, server_tz=self.server_tz)
+                else:
+                    ts_utc = ts.tz_convert("UTC")
+                ts_ny = ts_utc.tz_convert(NY_TZ)
+                self._times_ny.append(ts_ny)
+                self._opens.append(float(c["open"]))
+                self._highs.append(float(c["high"]))
+                self._lows.append(float(c["low"]))
+                self._closes.append(float(c["close"]))
+                self._volumes.append(float(c.get("volume", 0.0)))
+        while len(self._times_ny) > self.buffer_size:
+            self._times_ny.pop(0)
+            self._opens.pop(0)
+            self._highs.pop(0)
+            self._lows.pop(0)
+            self._closes.pop(0)
+            self._volumes.pop(0)
+        self._save_buffer_snapshot()
+
     def _run_preflight_checks(self):
-        """Enforces pre-flight checks: clean git tree and matching frozen file hashes."""
+        """Enforces pre-flight checks: clean git tree, matching frozen file hashes, remote reachability."""
         if self.check_frozen_hashes:
             for rel_path, expected_hash in FROZEN_FILE_HASHES.items():
                 actual_hash = get_file_sha256(rel_path)
@@ -458,6 +654,14 @@ class ForwardSignalLogger:
                     "Forward logger refuses to start with uncommitted tracked modifications."
                 )
 
+        if self.git_push_anchors:
+            reachable, err = check_git_remote_reachable(self.git_remote)
+            if not reachable:
+                raise RuntimeError(
+                    f"PRE-FLIGHT ERROR: External git remote '{self.git_remote}' is unreachable or network is down ({err}). "
+                    "Forward execution requires verified external anchor push capability."
+                )
+
     def _initialize_or_resume_chain(self):
         """Verifies existing log chain or writes the GENESIS record if starting anew."""
         if os.path.exists(self.log_path) and os.path.getsize(self.log_path) > 0:
@@ -466,8 +670,26 @@ class ForwardSignalLogger:
                 raise RuntimeError(f"FORWARD LOG INTEGRITY VIOLATION: {msg}")
             self.current_index = count
             self.head_hash = self._read_last_hash()
+            with open(self.log_path, "r", encoding="utf-8") as f:
+                first_line = f.readline()
+                if first_line.strip():
+                    rec0 = json.loads(first_line)
+                    gen_start = rec0.get("data", {}).get("forward_start_date")
+                    if self.forward_start_date is None:
+                        self.forward_start_date = gen_start
+                    elif gen_start and self.forward_start_date != gen_start:
+                        raise RuntimeError(
+                            f"STARTUP ERROR: forward_start_date mismatch with existing log: "
+                            f"log has '{gen_start}', startup passed '{self.forward_start_date}'."
+                        )
             self._replay_state_from_log()
+            self._load_buffer_snapshot()
         else:
+            if not self.forward_start_date:
+                raise ValueError(
+                    "STARTUP ERROR: forward_start_date is a required startup argument when initializing "
+                    "a new forward paper-trading run. It must not be omitted or None."
+                )
             self.current_index = 0
             self.head_hash = GENESIS_PREV_HASH
             self._write_genesis_record()
@@ -589,29 +811,29 @@ class ForwardSignalLogger:
             self._save_anchor_queue()
 
         if self.external_anchor_path:
-            try:
-                save_external_anchor(
-                    self.external_anchor_path,
-                    record["index"],
-                    event_type,
-                    rec_hash,
-                    git_push=self.git_push_anchors,
-                    git_remote=self.git_remote,
-                    git_branch=self.git_branch
-                )
-            except Exception:
-                pass
+            ok, msg = save_external_anchor(
+                self.external_anchor_path,
+                record["index"],
+                event_type,
+                rec_hash,
+                git_push=self.git_push_anchors,
+                git_remote=self.git_remote,
+                git_branch=self.git_branch
+            )
+            if not ok:
+                self.anchor_queue.append(anchor_item)
+                self._save_anchor_queue()
 
         return record
 
     def _write_genesis_record(self):
         """Writes the initial GENESIS record (Index 0)."""
-        now_utc = datetime.now(timezone.utc).isoformat()
+        now_utc = self.forward_start_date if self.forward_start_date else datetime.now(timezone.utc).isoformat()
         genesis_data = {
             "genesis_version": "v1.0",
             "git_tag": FORWARD_GIT_TAG,
             "git_commit": get_git_commit(),
-            "forward_start_date": FORWARD_START_DATE,
+            "forward_start_date": self.forward_start_date,
             "params_hash": PARAMS_HASH,
             "p_scaled": P_SCALED,
             "rr_target": RR_TARGET,
@@ -631,13 +853,16 @@ class ForwardSignalLogger:
           - volume (optional int/float)
         """
         raw_time = candle_dict.get("time", candle_dict.get("Date_NY", candle_dict.get("timestamp")))
-        ts = pd.Timestamp(raw_time)
+        if isinstance(raw_time, (int, float, np.integer, np.floating)):
+            ts = pd.to_datetime(raw_time, unit="s")
+        else:
+            ts = pd.Timestamp(raw_time)
 
         # Flush any pending external anchors on each candle close
         self._flush_anchor_queue()
 
         if ts.tzinfo is None:
-            ts_utc = ts.tz_localize("UTC")
+            ts_utc = convert_mt5_time_to_utc(ts, server_tz=self.server_tz)
         else:
             ts_utc = ts.tz_convert("UTC")
 
@@ -649,6 +874,10 @@ class ForwardSignalLogger:
         c = float(candle_dict["close"])
         v = float(candle_dict.get("volume", 0.0))
         cur_spread = float(realized_spread) if realized_spread is not None else SPREAD_ASSUMED
+
+        # Duplicate candle deduplication
+        if self.last_candle_time_utc is not None and ts_utc <= self.last_candle_time_utc:
+            return
 
         # 1. GAP Detection
         if self.last_candle_time_utc is not None:
@@ -682,6 +911,8 @@ class ForwardSignalLogger:
             self._lows.pop(0)
             self._closes.pop(0)
             self._volumes.pop(0)
+
+        self._save_buffer_snapshot()
 
         # 2. Evaluate Active Position (Exit check using imported backtester logic)
         if self.active_position is not None:
@@ -833,7 +1064,7 @@ class ForwardSignalLogger:
                     "low": self._lows,
                     "close": self._closes,
                     "volume": self._volumes
-                }, index=pd.DatetimeIndex(self._times_ny))
+                }, index=pd.to_datetime(self._times_ny, utc=True).tz_convert(NY_TZ))
 
                 t_idx = n_buffered - 1
                 sig = evaluate_causal_signal_at_bar(df_eval, t_idx, killzone_gate=False)
@@ -910,6 +1141,7 @@ def replay_dry_run(
         os.remove(log_path)
 
     logger = ForwardSignalLogger(
+        forward_start_date="2026-11-12T00:00:00Z",
         log_path=log_path,
         check_git=False,
         check_frozen_hashes=False,

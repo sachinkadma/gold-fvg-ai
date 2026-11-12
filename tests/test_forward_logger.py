@@ -73,6 +73,7 @@ def test_hash_chain_valid_and_tamper_detection(tmp_path):
         anchored_hashes.append((rec_idx, evt_type, rec_hash))
 
     logger = ForwardSignalLogger(
+        forward_start_date="2026-11-12T00:00:00Z",
         log_path=log_file,
         check_git=False,
         check_frozen_hashes=False,
@@ -125,6 +126,7 @@ def test_gap_detection_on_missing_candles(tmp_path):
     """Verifies that unexpected time gaps between closed candles generate a GAP record."""
     log_file = str(tmp_path / "gap_test.jsonl")
     logger = ForwardSignalLogger(
+        forward_start_date="2026-11-12T00:00:00Z",
         log_path=log_file,
         check_git=False,
         check_frozen_hashes=False
@@ -155,6 +157,7 @@ def test_genesis_record_structure(tmp_path):
     """Verifies genesis record format, genesis hash, and pre-flight hash integrity."""
     log_file = str(tmp_path / "genesis_test.jsonl")
     logger = ForwardSignalLogger(
+        forward_start_date="2026-11-12T00:00:00Z",
         log_path=log_file,
         check_git=False,
         check_frozen_hashes=False
@@ -179,7 +182,7 @@ def test_preflight_frozen_hashes_enforcement(tmp_path):
     try:
         FROZEN_FILE_HASHES["core/config.py"] = "0" * 64
         with pytest.raises(RuntimeError, match="Frozen file hash mismatch"):
-            ForwardSignalLogger(log_path=log_file, check_git=False, check_frozen_hashes=True)
+            ForwardSignalLogger(forward_start_date="2026-11-12T00:00:00Z", log_path=log_file, check_git=False, check_frozen_hashes=True)
     finally:
         FROZEN_FILE_HASHES["core/config.py"] = orig_hash
 
@@ -201,6 +204,7 @@ def test_telegram_anchor_queue_and_retry(tmp_path):
         succeeded_anchors.append((rec_idx, evt_type, rec_hash))
 
     logger = ForwardSignalLogger(
+        forward_start_date="2026-11-12T00:00:00Z",
         log_path=log_file,
         check_git=False,
         check_frozen_hashes=False,
@@ -242,6 +246,7 @@ def test_anchor_queue_disk_persistence(tmp_path):
 
     # Instance 1: fails to anchor genesis
     logger1 = ForwardSignalLogger(
+        forward_start_date="2026-11-12T00:00:00Z",
         log_path=log_file,
         check_git=False,
         check_frozen_hashes=False,
@@ -288,6 +293,7 @@ def test_external_anchor_ledger(tmp_path):
     ext_anchor_file = str(tmp_path / "external_anchors.json")
 
     logger = ForwardSignalLogger(
+        forward_start_date="2026-11-12T00:00:00Z",
         log_path=log_file,
         external_anchor_path=ext_anchor_file,
         check_git=False,
@@ -319,6 +325,7 @@ def test_verify_against_anchor_truncation_detection(tmp_path):
         anchored.append((rec_idx, rec_hash))
 
     logger = ForwardSignalLogger(
+        forward_start_date="2026-11-12T00:00:00Z",
         log_path=log_file,
         check_git=False,
         check_frozen_hashes=False,
@@ -365,6 +372,7 @@ def test_outside_killzone_signal_produces_skipped_record(train_data, tmp_path):
     """
     log_file = str(tmp_path / "outside_kz.jsonl")
     logger = ForwardSignalLogger(
+        forward_start_date="2026-11-12T00:00:00Z",
         log_path=log_file,
         check_git=False,
         check_frozen_hashes=False,
@@ -469,53 +477,66 @@ def test_buffer_135_parity_vs_full_history(train_data):
     assert full_signals == buf_signals, "135-bar buffer signals diverged from full-history signals!"
 
 
-def test_buffer_warmup_no_signal_emission_below_135(train_data, tmp_path):
+def test_buffer_warmup_suppresses_signal_below_135(train_data, tmp_path):
     """
     CONFIRMATION TEST 2C:
-    Verifies that while buffer has fewer than 135 bars (warm-up phase),
-    NO signals are emitted, and the logger remains strictly silent.
-    Signals only evaluate once candle #135 arrives.
+    Proves warmup gate suppression: on slice train_data.iloc[100:250], a valid ICT
+    SELL signal triggers at bar index 40 when min_buffer_warmup=35.
+    Under min_buffer_warmup=135, this signal is strictly suppressed and 0 signals
+    are emitted across the entire warm-up window [0..133].
     """
     df_slice = train_data.iloc[100:250].copy()
-    log_file = str(tmp_path / "warmup_logger.jsonl")
 
-    logger = ForwardSignalLogger(
-        log_path=log_file,
+    # 1. Baseline without 135-bar gate (warmup=35): signal WOULD be emitted at bar 40
+    log_unsuppressed = str(tmp_path / "unsuppressed.jsonl")
+    logger_unsuppressed = ForwardSignalLogger(
+        forward_start_date="2026-11-12T00:00:00Z",
+        log_path=log_unsuppressed,
         check_git=False,
         check_frozen_hashes=False,
-        min_buffer_warmup=135,
-        buffer_size=135,
         killzone_gate=False,
-        skip_outside_kz_eval=False
+        skip_outside_kz_eval=False,
+        min_buffer_warmup=35
     )
-
-    times = df_slice.index
-    opens = df_slice["open"].values
-    highs = df_slice["high"].values
-    lows = df_slice["low"].values
-    closes = df_slice["close"].values
-    vols = df_slice["volume"].values if "volume" in df_slice.columns else [0] * len(df_slice)
-
-    # Feed first 134 candles (< 135 warmup threshold)
-    for i in range(134):
-        logger.on_candle_closed({
-            "time": times[i], "open": opens[i], "high": highs[i], "low": lows[i], "close": closes[i], "volume": vols[i]
+    for i in range(50):
+        row = df_slice.iloc[i]
+        logger_unsuppressed.on_candle_closed({
+            "time": df_slice.index[i], "open": row["open"], "high": row["high"], "low": row["low"], "close": row["close"], "volume": row["volume"]
         })
 
-    assert len(logger._times_ny) == 134
-    assert logger.signal_counter == 0
+    events_unsup = [json.loads(line) for line in open(log_unsuppressed) if line.strip()]
+    sigs_unsup = [e for e in events_unsup if e["event"] == "SIGNAL"]
+    assert len(sigs_unsup) >= 1, "Expected baseline setup to emit signal at bar < 50 without 135-bar warmup"
+    assert sigs_unsup[0]["data"]["direction"] == "SELL"
 
-    with open(log_file, "r", encoding="utf-8") as f:
-        events = [json.loads(line) for line in f if line.strip()]
+    # 2. With 135-bar warmup gate: identical candles fed, but signals are strictly suppressed
+    log_suppressed = str(tmp_path / "suppressed.jsonl")
+    logger_suppressed = ForwardSignalLogger(
+        forward_start_date="2026-11-12T00:00:00Z",
+        log_path=log_suppressed,
+        check_git=False,
+        check_frozen_hashes=False,
+        killzone_gate=False,
+        skip_outside_kz_eval=False,
+        min_buffer_warmup=135
+    )
+    for i in range(134):  # bars 0 to 133 (< 135 warmup threshold)
+        row = df_slice.iloc[i]
+        logger_suppressed.on_candle_closed({
+            "time": df_slice.index[i], "open": row["open"], "high": row["high"], "low": row["low"], "close": row["close"], "volume": row["volume"]
+        })
 
-    # Zero SIGNAL events should be emitted during warmup (< 135 bars)
-    assert [e for e in events if e["event"] == "SIGNAL"] == []
+    events_sup = [json.loads(line) for line in open(log_suppressed) if line.strip()]
+    sigs_sup = [e for e in events_sup if e["event"] == "SIGNAL"]
+    assert len(sigs_sup) == 0, f"Expected 0 signals during warmup, got {len(sigs_sup)}"
+    assert logger_suppressed.signal_counter == 0
 
-    # Feed 135th candle -> warmup complete
-    logger.on_candle_closed({
-        "time": times[134], "open": opens[134], "high": highs[134], "low": lows[134], "close": closes[134], "volume": vols[134]
+    # 3. Bar 135 arrives -> warmup complete and evaluation unlocks
+    row_135 = df_slice.iloc[134]
+    logger_suppressed.on_candle_closed({
+        "time": df_slice.index[134], "open": row_135["open"], "high": row_135["high"], "low": row_135["low"], "close": row_135["close"], "volume": row_135["volume"]
     })
-    assert len(logger._times_ny) == 135
+    assert len(logger_suppressed._times_ny) == 135
 
 
 def test_mt5_time_conversion_us_vs_eu_dst():
@@ -568,6 +589,7 @@ def test_logger_fills_vs_backtester_train_slice(train_data, tmp_path):
 
     log_file = str(tmp_path / "train_slice_logger.jsonl")
     logger = ForwardSignalLogger(
+        forward_start_date="2026-11-12T00:00:00Z",
         log_path=log_file,
         check_git=False,
         check_frozen_hashes=False,
@@ -642,6 +664,7 @@ def test_logger_parity_dst_spring_slice(train_data, tmp_path):
 
     log_file = str(tmp_path / "dst_spring_logger.jsonl")
     logger = ForwardSignalLogger(
+        forward_start_date="2026-11-12T00:00:00Z",
         log_path=log_file,
         check_git=False,
         check_frozen_hashes=False,
@@ -708,6 +731,7 @@ def test_logger_parity_november_fallback_dst_slice(train_data, tmp_path):
 
     log_file = str(tmp_path / "dst_fallback_logger.jsonl")
     logger = ForwardSignalLogger(
+        forward_start_date="2026-11-12T00:00:00Z",
         log_path=log_file,
         check_git=False,
         check_frozen_hashes=False,
@@ -774,6 +798,7 @@ def test_logger_parity_valid_period_slice(train_data, tmp_path):
 
     log_file = str(tmp_path / "valid_slice_logger.jsonl")
     logger = ForwardSignalLogger(
+        forward_start_date="2026-11-12T00:00:00Z",
         log_path=log_file,
         check_git=False,
         check_frozen_hashes=False,
@@ -846,3 +871,119 @@ def test_dry_run_replay(train_data, tmp_path):
     assert res["candles_replayed"] == 400
     assert res["record_count"] >= 1
     assert os.path.exists(dry_log)
+
+
+def test_forward_start_date_required_and_staleness_enforcement(tmp_path):
+    """
+    Verifies FORWARD_START_DATE contract:
+    1. Mandatory on new logger startup (raises ValueError if None or empty).
+    2. Refuses start if start date is >1 day in the past.
+    3. Valid start date (<24h old) is written to GENESIS payload.
+    """
+    log_file1 = str(tmp_path / "log_missing_start.jsonl")
+    with pytest.raises(ValueError, match="forward_start_date is a required startup argument"):
+        ForwardSignalLogger(forward_start_date=None, log_path=log_file1, check_git=False, check_frozen_hashes=False)
+
+    log_file2 = str(tmp_path / "log_stale_start.jsonl")
+    stale_date = "2026-11-01T00:00:00Z"
+    with pytest.raises(ValueError, match="is >1 day in the past"):
+        ForwardSignalLogger(forward_start_date=stale_date, log_path=log_file2, check_git=False, check_frozen_hashes=False)
+
+    log_file3 = str(tmp_path / "log_valid_start.jsonl")
+    valid_date = "2026-11-12T00:00:00Z"
+    logger = ForwardSignalLogger(forward_start_date=valid_date, log_path=log_file3, check_git=False, check_frozen_hashes=False)
+    with open(log_file3, "r", encoding="utf-8") as f:
+        rec0 = json.loads(f.readline())
+    assert rec0["event"] == "GENESIS"
+    assert rec0["data"]["forward_start_date"] == "2026-11-12T00:00:00+00:00"
+    assert rec0["data"]["git_tag"] == "forward-v2"
+
+
+def test_restart_recovery_mid_position_equals_uninterrupted(train_data, tmp_path):
+    """
+    CONFIRMATION TEST 7:
+    Verifies restart recovery when killed mid-position:
+    1. Uninterrupted run on slice [2015-01-01:2015-01-15].
+    2. Interrupted run killed at bar 315 (while active position SIG-0003 is open).
+    3. Re-instantiated logger recovers active_position and buffer from chain.
+    4. Resumed run completes identical to uninterrupted run (record-for-record & hash-for-hash).
+    5. verify_chain returns True on resulting chain.
+    """
+    df_slice = train_data.loc["2015-01-01":"2015-01-15"].copy()
+
+    # 1. Uninterrupted reference run
+    p_unint = str(tmp_path / "uninterrupted.jsonl")
+    l_unint = ForwardSignalLogger(
+        forward_start_date="2026-11-12T00:00:00Z",
+        log_path=p_unint,
+        check_git=False,
+        check_frozen_hashes=False,
+        killzone_gate=True,
+        p_scaled_filter=False,
+        killzone_expiry=True,
+        skip_outside_kz_eval=True,
+        min_buffer_warmup=35
+    )
+    for i in range(len(df_slice)):
+        r = df_slice.iloc[i]
+        l_unint.on_candle_closed({
+            "time": df_slice.index[i], "open": r["open"], "high": r["high"], "low": r["low"], "close": r["close"], "volume": r["volume"]
+        })
+
+    evts_unint = [json.loads(l) for l in open(p_unint) if l.strip()]
+    fill_idx = [i for i, e in enumerate(evts_unint) if e["event"] == "FILL" and e["data"]["signal_id"] == "SIG-0003"][0]
+
+    # 2. Interrupted run: write records up to fill_idx (simulating kill right after fill)
+    p_inter = str(tmp_path / "interrupted.jsonl")
+    with open(p_inter, "w", encoding="utf-8") as f:
+        for e in evts_unint[:fill_idx + 1]:
+            f.write(json.dumps(e, separators=(",", ":")) + "\n")
+
+    # 3. Re-boot logger on the interrupted file
+    l_resumed = ForwardSignalLogger(
+        forward_start_date="2026-11-12T00:00:00Z",
+        log_path=p_inter,
+        check_git=False,
+        check_frozen_hashes=False,
+        killzone_gate=True,
+        p_scaled_filter=False,
+        killzone_expiry=True,
+        skip_outside_kz_eval=True,
+        min_buffer_warmup=35
+    )
+    assert l_resumed.active_position is not None, "Active position must be recovered from chain"
+    assert l_resumed.active_position["signal_id"] == "SIG-0003"
+
+    # 4. Resume feeding remaining candles from bar 314
+    for i in range(314, len(df_slice)):
+        r = df_slice.iloc[i]
+        l_resumed.on_candle_closed({
+            "time": df_slice.index[i], "open": r["open"], "high": r["high"], "low": r["low"], "close": r["close"], "volume": r["volume"]
+        })
+
+    # 5. Assert exact match
+    evts_inter = [json.loads(l) for l in open(p_inter) if l.strip()]
+    assert len(evts_unint) == len(evts_inter)
+    for k in range(len(evts_unint)):
+        assert evts_unint[k] == evts_inter[k], f"Mismatch at record {k}: {evts_unint[k]} vs {evts_inter[k]}"
+
+    valid, msg, cnt = verify_chain(p_inter)
+    assert valid is True
+    assert cnt == len(evts_unint)
+
+
+def test_git_push_anchor_remote_unreachable_refuses_start(tmp_path):
+    """
+    Verifies that ForwardSignalLogger refuses to start if git_push_anchors=True
+    and the remote is unreachable.
+    """
+    log_file = str(tmp_path / "test_unreachable.jsonl")
+    with pytest.raises(RuntimeError, match="is unreachable or network is down"):
+        ForwardSignalLogger(
+            forward_start_date="2026-11-12T00:00:00Z",
+            log_path=log_file,
+            check_git=False,
+            check_frozen_hashes=False,
+            git_push_anchors=True,
+            git_remote="nonexistent-remote-url-xyz-99"
+        )
