@@ -18,9 +18,8 @@ From `research/PREREG_TEST.md` Section 5:
     $$\Delta t = 10\text{h } 41\text{m } 55\text{s} \approx 0.446\text{ days (calendar day difference: +1 day)}$$
 - **30-Month Duration & End Date**:
   - Computed from Forward Start Date (`2026-11-12T00:00:00Z`):
-    - Calendar 30-Month Boundary: `2029-05-12T00:00:00Z`
-    - Standard Day Scale ($30 \times 30.4375\text{ days} = 913.125\text{ days}$): `2029-05-13T03:00:00Z`
-  - End condition triggers on whichever comes first: 20 executed trades ($N=20$) OR 30 months elapsed.
+    - Strict Calendar 30-Month Boundary: `2029-05-12T00:00:00Z` (exact calendar-month computation stored in GENESIS).
+  - End condition triggers on whichever comes first: 20 executed trades ($N=20$) OR 30 calendar months elapsed.
 
 ## 3. Sample Exclusion in the Intervening Gap
 - All market bars, ticks, or candidate signals that occurred between `2026-11-11T13:18:05Z` (TEST completion) and `2026-11-12T00:00:00Z` (Forward Start) are strictly outside the forward sample.

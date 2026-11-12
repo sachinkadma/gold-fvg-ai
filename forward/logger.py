@@ -889,11 +889,23 @@ class ForwardSignalLogger:
     def _write_genesis_record(self):
         """Writes the initial GENESIS record (Index 0)."""
         now_utc = self.forward_start_date if self.forward_start_date else datetime.now(timezone.utc).isoformat()
+        
+        # Calendar-month computation: exact 30 calendar months from forward_start_date
+        forward_end_date_30m = None
+        if self.forward_start_date:
+            try:
+                start_ts = pd.Timestamp(self.forward_start_date)
+                end_ts_30m = start_ts + pd.DateOffset(months=30)
+                forward_end_date_30m = end_ts_30m.isoformat()
+            except Exception:
+                forward_end_date_30m = None
+
         genesis_data = {
             "genesis_version": "v1.0",
             "git_tag": get_git_tag(),
             "git_commit": get_git_commit(),
             "forward_start_date": self.forward_start_date,
+            "forward_end_date_30m": forward_end_date_30m,
             "symbol": self.symbol,
             "server_name": self.server_name,
             "feed_name": self.feed_name,

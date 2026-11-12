@@ -51,7 +51,6 @@ logger = logging.getLogger("forward_monitor")
 TARGET_N_FORWARD = 20
 EARLY_FAIL_N = 12
 MAX_DURATION_MONTHS = 30.0
-DAYS_PER_MONTH = 30.4375  # 365.25 / 12
 
 
 def block_bootstrap_ci(r_vals, month_periods, n_resamples=2000, seed=42) -> Tuple[float, float]:
@@ -268,7 +267,21 @@ class ForwardMonitor:
         closed_trades = raw_closed_trades[:TARGET_N_FORWARD]
         total_closed_recorded = len(raw_closed_trades)
 
-        # 5. Compute elapsed time and time limit check (30 months)
+        # 5. Compute calendar-month elapsed time and exact 30-month end limit
+        end_date_30m_str = genesis.get("forward_end_date_30m")
+        if end_date_30m_str:
+            try:
+                end_dt_30m = datetime.fromisoformat(end_date_30m_str)
+                if end_dt_30m.tzinfo is None:
+                    end_dt_30m = end_dt_30m.replace(tzinfo=timezone.utc)
+            except Exception:
+                end_dt_30m = (pd.Timestamp(start_dt) + pd.DateOffset(months=30)).to_pydatetime()
+        else:
+            end_dt_30m = (pd.Timestamp(start_dt) + pd.DateOffset(months=30)).to_pydatetime()
+
+        if end_dt_30m.tzinfo is None:
+            end_dt_30m = end_dt_30m.replace(tzinfo=timezone.utc)
+
         if current_time is not None:
             if isinstance(current_time, str):
                 eval_dt = datetime.fromisoformat(current_time)
@@ -280,8 +293,9 @@ class ForwardMonitor:
             eval_dt = latest_event_time
 
         elapsed_days = max(0.0, (eval_dt - start_dt).total_seconds() / 86400.0)
-        elapsed_months = elapsed_days / DAYS_PER_MONTH
-        time_limit_reached = elapsed_months >= MAX_DURATION_MONTHS
+        total_30m_days = max(1.0, (end_dt_30m - start_dt).total_seconds() / 86400.0)
+        elapsed_months = min(30.0, (elapsed_days / total_30m_days) * 30.0)
+        time_limit_reached = (eval_dt >= end_dt_30m)
 
         # 6. Compute statistical metrics on the active sample (capped at 20)
         n_trades = len(closed_trades)
@@ -403,6 +417,7 @@ class ForwardMonitor:
             "verdict_detail": verdict_detail,
             "chain_valid": True,
             "forward_start_date": start_date_str,
+            "forward_end_date_30m": end_dt_30m.isoformat(),
             "eval_time": eval_dt.isoformat(),
             "elapsed_months": round(elapsed_months, 2),
             "max_duration_months": MAX_DURATION_MONTHS,

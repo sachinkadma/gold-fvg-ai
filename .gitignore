@@ -12,3 +12,8 @@ data/
 /trades.csv
 /metrics.json
 /equity_curve.png
+
+# Forward runner outputs and logs
+out/
+*.log
+forward/launch/*.log
