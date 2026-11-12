@@ -7,9 +7,9 @@
 - **Tuning/Filtering**: No new filters, no parameter tuning. Long/short is strictly observation-only ("NOT FOR DECISIONS").
 
 ## 2. Current State
-- **Branch / Commit**: `reorg` @ `9286d8b` (clean working tree).
-- **Tags**: `forward-v1` (`85ed7f3`), `forward-v2` (`9286d8b`), `prereg-v1`..`prereg-v4`. Tags pushed to `origin`.
-- **Pytest**: 32 passed in 232.69s (Exit Code: 0).
+- **Branch / Commit**: `reorg` (clean working tree).
+- **Tags**: `forward-v1`, `forward-v2`, `forward-v3` (`5d231d6`), `prereg-v1`..`prereg-v4`. Tags pushed to `origin`.
+- **Pytest**: 36 passed in 283.02s (Exit Code: 0).
 - **Verify.py**: PASS (Exit Code: 0) — SHA256 integrity verified against baseline `trades.csv`.
 
 ## 3. Architecture & File Inventory
@@ -20,7 +20,7 @@
   - Companion Files: `[log]_buffer.json` (buffer snapshot), `[log]_anchor_queue.json` (un-pushed retry queue).
   - External Anchoring: Head hash committed via git plumbing to dedicated orphan branch `forward-anchors` on remote `origin`.
 - `forward/run_forward.py`: Live/dry-run runner orchestrating MT5 closed 15m polling, deduplication, downtime recovery, and restart state reconstruction.
-- `tests/test_forward_logger.py`: 24 forward test cases (tamper detection, truncation, restart recovery, parity, warm-up suppression).
+- `tests/test_forward_logger.py`: 25 forward test cases (tamper detection, truncation, restart recovery, parity, warm-up suppression, crash-before-anchor, genesis metadata).
 
 ## 4. Verified Decisions
 - **Broker Timezone**: MetaQuotes-Demo runs on Cyprus EU DST (`server_tz="EU_EET"`, UTC+2 standard). Empirically verified against Dukascopy UTC: EU offset MAE 0.13–0.34 pts (92–100% matches); US offset (NY-7h) failed with MAE 6–18 pts (1–7% matches).

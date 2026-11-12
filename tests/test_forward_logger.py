@@ -73,7 +73,7 @@ def test_hash_chain_valid_and_tamper_detection(tmp_path):
         anchored_hashes.append((rec_idx, evt_type, rec_hash))
 
     logger = ForwardSignalLogger(
-        forward_start_date="2026-11-12T00:00:00Z",
+        forward_start_date="2026-11-10T00:00:00Z",
         log_path=log_file,
         check_git=False,
         check_frozen_hashes=False,
@@ -126,7 +126,7 @@ def test_gap_detection_on_missing_candles(tmp_path):
     """Verifies that unexpected time gaps between closed candles generate a GAP record."""
     log_file = str(tmp_path / "gap_test.jsonl")
     logger = ForwardSignalLogger(
-        forward_start_date="2026-11-12T00:00:00Z",
+        forward_start_date="2026-11-10T00:00:00Z",
         log_path=log_file,
         check_git=False,
         check_frozen_hashes=False
@@ -157,7 +157,7 @@ def test_genesis_record_structure(tmp_path):
     """Verifies genesis record format, genesis hash, and pre-flight hash integrity."""
     log_file = str(tmp_path / "genesis_test.jsonl")
     logger = ForwardSignalLogger(
-        forward_start_date="2026-11-12T00:00:00Z",
+        forward_start_date="2026-11-10T00:00:00Z",
         log_path=log_file,
         check_git=False,
         check_frozen_hashes=False
@@ -204,7 +204,7 @@ def test_telegram_anchor_queue_and_retry(tmp_path):
         succeeded_anchors.append((rec_idx, evt_type, rec_hash))
 
     logger = ForwardSignalLogger(
-        forward_start_date="2026-11-12T00:00:00Z",
+        forward_start_date="2026-11-10T00:00:00Z",
         log_path=log_file,
         check_git=False,
         check_frozen_hashes=False,
@@ -246,7 +246,7 @@ def test_anchor_queue_disk_persistence(tmp_path):
 
     # Instance 1: fails to anchor genesis
     logger1 = ForwardSignalLogger(
-        forward_start_date="2026-11-12T00:00:00Z",
+        forward_start_date="2026-11-10T00:00:00Z",
         log_path=log_file,
         check_git=False,
         check_frozen_hashes=False,
@@ -293,7 +293,7 @@ def test_external_anchor_ledger(tmp_path):
     ext_anchor_file = str(tmp_path / "external_anchors.json")
 
     logger = ForwardSignalLogger(
-        forward_start_date="2026-11-12T00:00:00Z",
+        forward_start_date="2026-11-10T00:00:00Z",
         log_path=log_file,
         external_anchor_path=ext_anchor_file,
         check_git=False,
@@ -325,7 +325,7 @@ def test_verify_against_anchor_truncation_detection(tmp_path):
         anchored.append((rec_idx, rec_hash))
 
     logger = ForwardSignalLogger(
-        forward_start_date="2026-11-12T00:00:00Z",
+        forward_start_date="2026-11-10T00:00:00Z",
         log_path=log_file,
         check_git=False,
         check_frozen_hashes=False,
@@ -372,7 +372,7 @@ def test_outside_killzone_signal_produces_skipped_record(train_data, tmp_path):
     """
     log_file = str(tmp_path / "outside_kz.jsonl")
     logger = ForwardSignalLogger(
-        forward_start_date="2026-11-12T00:00:00Z",
+        forward_start_date="2015-01-01T00:00:00Z",
         log_path=log_file,
         check_git=False,
         check_frozen_hashes=False,
@@ -490,7 +490,7 @@ def test_buffer_warmup_suppresses_signal_below_135(train_data, tmp_path):
     # 1. Baseline without 135-bar gate (warmup=35): signal WOULD be emitted at bar 40
     log_unsuppressed = str(tmp_path / "unsuppressed.jsonl")
     logger_unsuppressed = ForwardSignalLogger(
-        forward_start_date="2026-11-12T00:00:00Z",
+        forward_start_date=str(df_slice.index[0]),
         log_path=log_unsuppressed,
         check_git=False,
         check_frozen_hashes=False,
@@ -512,7 +512,7 @@ def test_buffer_warmup_suppresses_signal_below_135(train_data, tmp_path):
     # 2. With 135-bar warmup gate: identical candles fed, but signals are strictly suppressed
     log_suppressed = str(tmp_path / "suppressed.jsonl")
     logger_suppressed = ForwardSignalLogger(
-        forward_start_date="2026-11-12T00:00:00Z",
+        forward_start_date=str(df_slice.index[0]),
         log_path=log_suppressed,
         check_git=False,
         check_frozen_hashes=False,
@@ -589,7 +589,7 @@ def test_logger_fills_vs_backtester_train_slice(train_data, tmp_path):
 
     log_file = str(tmp_path / "train_slice_logger.jsonl")
     logger = ForwardSignalLogger(
-        forward_start_date="2026-11-12T00:00:00Z",
+        forward_start_date="2015-01-01T00:00:00Z",
         log_path=log_file,
         check_git=False,
         check_frozen_hashes=False,
@@ -664,7 +664,7 @@ def test_logger_parity_dst_spring_slice(train_data, tmp_path):
 
     log_file = str(tmp_path / "dst_spring_logger.jsonl")
     logger = ForwardSignalLogger(
-        forward_start_date="2026-11-12T00:00:00Z",
+        forward_start_date="2015-03-01T00:00:00Z",
         log_path=log_file,
         check_git=False,
         check_frozen_hashes=False,
@@ -731,7 +731,7 @@ def test_logger_parity_november_fallback_dst_slice(train_data, tmp_path):
 
     log_file = str(tmp_path / "dst_fallback_logger.jsonl")
     logger = ForwardSignalLogger(
-        forward_start_date="2026-11-12T00:00:00Z",
+        forward_start_date="2015-10-25T00:00:00Z",
         log_path=log_file,
         check_git=False,
         check_frozen_hashes=False,
@@ -798,7 +798,7 @@ def test_logger_parity_valid_period_slice(train_data, tmp_path):
 
     log_file = str(tmp_path / "valid_slice_logger.jsonl")
     logger = ForwardSignalLogger(
-        forward_start_date="2026-11-12T00:00:00Z",
+        forward_start_date="2020-01-01T00:00:00Z",
         log_path=log_file,
         check_git=False,
         check_frozen_hashes=False,
@@ -887,7 +887,7 @@ def test_forward_start_date_required_and_staleness_enforcement(tmp_path):
     log_file2 = str(tmp_path / "log_stale_start.jsonl")
     stale_date = "2026-11-01T00:00:00Z"
     with pytest.raises(ValueError, match="is >1 day in the past"):
-        ForwardSignalLogger(forward_start_date=stale_date, log_path=log_file2, check_git=False, check_frozen_hashes=False)
+        ForwardSignalLogger(forward_start_date=stale_date, log_path=log_file2, check_git=False, check_frozen_hashes=False, enforce_staleness=True)
 
     log_file3 = str(tmp_path / "log_valid_start.jsonl")
     valid_date = "2026-11-12T00:00:00Z"
@@ -914,7 +914,7 @@ def test_restart_recovery_mid_position_equals_uninterrupted(train_data, tmp_path
     # 1. Uninterrupted reference run
     p_unint = str(tmp_path / "uninterrupted.jsonl")
     l_unint = ForwardSignalLogger(
-        forward_start_date="2026-11-12T00:00:00Z",
+        forward_start_date="2015-01-01T00:00:00Z",
         log_path=p_unint,
         check_git=False,
         check_frozen_hashes=False,
@@ -941,7 +941,7 @@ def test_restart_recovery_mid_position_equals_uninterrupted(train_data, tmp_path
 
     # 3. Re-boot logger on the interrupted file
     l_resumed = ForwardSignalLogger(
-        forward_start_date="2026-11-12T00:00:00Z",
+        forward_start_date="2015-01-01T00:00:00Z",
         log_path=p_inter,
         check_git=False,
         check_frozen_hashes=False,
@@ -1051,7 +1051,7 @@ def test_history_preload_bars_before_forward_start_date_only_fill_buffer(train_d
 
     # forward_start_date set to 2026-11-12 (all slice candles are in 2015, hence before start date)
     logger = ForwardSignalLogger(
-        forward_start_date="2026-11-12T00:00:00Z",
+        forward_start_date="2026-11-10T00:00:00Z",
         log_path=log_file,
         check_git=False,
         check_frozen_hashes=False,
@@ -1093,12 +1093,13 @@ def test_restart_with_pending_order_and_crash_before_anchor_push(train_data, tmp
     anchor_file = str(tmp_path / "crash_anchors.json")
 
     logger1 = ForwardSignalLogger(
-        forward_start_date="2026-11-12T00:00:00Z",
+        forward_start_date="2015-01-01T00:00:00Z",
         log_path=log_file,
         external_anchor_path=anchor_file,
         check_git=False,
         check_frozen_hashes=False,
         killzone_gate=False,
+        p_scaled_filter=False,
         min_buffer_warmup=35
     )
 
@@ -1133,12 +1134,13 @@ def test_restart_with_pending_order_and_crash_before_anchor_push(train_data, tmp
 
     # Re-instantiate logger on existing files
     logger2 = ForwardSignalLogger(
-        forward_start_date="2026-11-12T00:00:00Z",
+        forward_start_date="2015-01-01T00:00:00Z",
         log_path=log_file,
         external_anchor_path=anchor_file,
         check_git=False,
         check_frozen_hashes=False,
         killzone_gate=False,
+        p_scaled_filter=False,
         min_buffer_warmup=35
     )
 

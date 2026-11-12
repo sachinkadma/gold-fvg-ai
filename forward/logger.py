@@ -443,7 +443,8 @@ class ForwardSignalLogger:
         feed_name="MT5",
         git_push_anchors=False,
         git_remote="origin",
-        git_branch="forward-anchors"
+        git_branch="forward-anchors",
+        enforce_staleness=None
     ):
         self.log_path = os.path.abspath(log_path) if not os.path.isabs(log_path) else log_path
         self.check_git = check_git
@@ -465,28 +466,27 @@ class ForwardSignalLogger:
         self.git_push_anchors = git_push_anchors
         self.git_remote = git_remote
         self.git_branch = git_branch
-        self.last_setup_key = None
+        self.enforce_staleness = check_git if enforce_staleness is None else enforce_staleness
 
         # Forward Start Date staleness validation (< 1 day in the past)
         if forward_start_date is not None:
             try:
-                dt_str = forward_start_date.replace("Z", "+00:00")
-                if "T" in dt_str:
-                    start_dt = datetime.fromisoformat(dt_str)
-                else:
-                    start_dt = datetime.strptime(dt_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                start_dt = pd.Timestamp(forward_start_date)
                 if start_dt.tzinfo is None:
-                    start_dt = start_dt.replace(tzinfo=timezone.utc)
+                    start_dt = start_dt.tz_localize("UTC")
+                else:
+                    start_dt = start_dt.tz_convert("UTC")
             except Exception as e:
                 raise ValueError(f"Invalid forward_start_date format '{forward_start_date}': {e}")
 
-            now_utc = datetime.now(timezone.utc)
-            staleness = (now_utc - start_dt).total_seconds()
-            if staleness > 86400:  # > 1 day in the past
-                raise ValueError(
-                    f"STARTUP ERROR: forward_start_date '{forward_start_date}' is >1 day in the past "
-                    f"({staleness/3600:.1f} hours ago). Refusing to start forward paper trading with stale start date."
-                )
+            if self.enforce_staleness:
+                now_utc = datetime.now(timezone.utc)
+                staleness = (now_utc - start_dt).total_seconds()
+                if staleness > 86400:  # > 1 day in the past
+                    raise ValueError(
+                        f"STARTUP ERROR: forward_start_date '{forward_start_date}' is >1 day in the past "
+                        f"({staleness/3600:.1f} hours ago). Refusing to start forward paper trading with stale start date."
+                    )
             self.forward_start_date = start_dt.isoformat()
         else:
             self.forward_start_date = None
@@ -1157,11 +1157,6 @@ class ForwardSignalLogger:
                 t_idx = n_buffered - 1
                 sig = evaluate_causal_signal_at_bar(df_eval, t_idx, killzone_gate=False)
                 if sig is not None:
-                    setup_key = (sig["direction"], round(sig["entry"], 2), round(sig["sl"], 2), round(sig["tp"], 2))
-                    if setup_key == self.last_setup_key:
-                        return None
-                    self.last_setup_key = setup_key
-
                     self.signal_counter += 1
                     sig_id = f"SIG-{self.signal_counter:04d}"
 
@@ -1216,8 +1211,6 @@ class ForwardSignalLogger:
                             "sig_time_utc": ts_utc.isoformat(),
                             "bars_elapsed": 0
                         }
-                else:
-                    self.last_setup_key = None
 
 
 def replay_dry_run(
