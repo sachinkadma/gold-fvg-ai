@@ -8,6 +8,7 @@ and buffer) from the append-only hash chain on restart, and anchors head hashes 
 import os
 import sys
 import time
+import json
 import signal
 import logging
 import argparse
@@ -103,7 +104,32 @@ def run_dry_run(mt5, symbol, forward_start_date, log_path, days=3, server_tz="EU
         }, realized_spread=r["spread"] * 0.01 if "spread" in r.dtype.names else None)
 
     valid, msg, count = verify_chain(log_path)
-    logger.info(f"Dry-run finished. Total records: {count}, Chain valid: {valid} ({msg})")
+    
+    # Audit log breakdown
+    with open(log_path, "r", encoding="utf-8") as f:
+        events = [json.loads(l) for l in f if l.strip()]
+
+    signals = [e for e in events if e["event"] == "SIGNAL"]
+    status_counts = {}
+    for s in signals:
+        st = s["data"].get("filter_status", "UNKNOWN")
+        status_counts[st] = status_counts.get(st, 0) + 1
+
+    gaps = [e for e in events if e["event"] == "GAP"]
+    gap_counts = {}
+    for g in gaps:
+        gt = g["data"].get("gap_type", "UNKNOWN")
+        gap_counts[gt] = gap_counts.get(gt, 0) + 1
+
+    fills = [e for e in events if e["event"] == "FILL"]
+    closes = [e for e in events if e["event"] == "CLOSE"]
+    n_trades = len(closes)
+
+    logger.info("=== DRY-RUN REPLAY SUMMARY ===")
+    logger.info(f"Total events logged: {count} | Chain integrity: {valid} ({msg})")
+    logger.info(f"Signals by filter_status: {status_counts}")
+    logger.info(f"Gaps breakdown: {gap_counts}")
+    logger.info(f"Fills: {len(fills)} | Closed trades (N): {n_trades}")
     return valid
 
 
@@ -114,6 +140,8 @@ def run_forward_loop(
     log_path="forward/signals.jsonl",
     anchor_ledger="forward/anchors.json",
     server_tz="EU_EET",
+    server_name="MetaQuotes-Demo",
+    feed_name="MT5",
     git_push_anchors=False,
     git_remote="origin",
     git_branch="forward-anchors",
@@ -144,6 +172,9 @@ def run_forward_loop(
         check_frozen_hashes=check_frozen_hashes,
         external_anchor_path=anchor_ledger,
         server_tz=server_tz,
+        server_name=server_name,
+        symbol=symbol,
+        feed_name=feed_name,
         git_push_anchors=git_push_anchors,
         git_remote=git_remote,
         git_branch=git_branch
@@ -232,6 +263,8 @@ def main():
     parser.add_argument("--symbol", default="XAUUSD", help="Symbol to monitor (default: XAUUSD)")
     parser.add_argument("--timeframe", default="M15", help="Timeframe (default: M15)")
     parser.add_argument("--server-tz", default="EU_EET", help="Broker server timezone mode (default: EU_EET for MetaQuotes)")
+    parser.add_argument("--server-name", default="MetaQuotes-Demo", help="Broker server name (default: MetaQuotes-Demo)")
+    parser.add_argument("--feed-name", default="MT5", help="Data feed name (default: MT5)")
     parser.add_argument("--log-path", default="forward/signals.jsonl", help="Path to append-only JSONL log")
     parser.add_argument("--anchor-ledger", default="forward/anchors.json", help="Path to external anchor JSON ledger")
     parser.add_argument("--no-git-push-anchors", dest="git_push_anchors", action="store_false", help="Disable mandatory git push of anchors to remote")
@@ -267,6 +300,8 @@ def main():
         log_path=args.log_path,
         anchor_ledger=args.anchor_ledger,
         server_tz=args.server_tz,
+        server_name=args.server_name,
+        feed_name=args.feed_name,
         git_push_anchors=args.git_push_anchors,
         git_remote=args.git_remote,
         git_branch=args.git_branch,

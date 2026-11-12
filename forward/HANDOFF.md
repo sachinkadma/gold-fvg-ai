@@ -28,6 +28,7 @@
 - **Parity Protocol**: Trade outcomes strictly verified against `research.meta_labeling.pipeline_metalabeling:simulate_candidate_forward` with 100% exact `net_r` match.
 - **Startup Date Contract**: `FORWARD_START_DATE` is mandatory at startup (e.g. `2026-11-12T00:00:00Z`). Logger refuses start if missing or stale (>24h past). Written to `GENESIS`.
 - **Branch Protection**: Remote `forward-anchors` branch must have force-push disabled (`--force` prohibited).
+- **Unattended Push Auth**: For headless/daemon forward runs, authenticate via GitHub Deploy Key (read/write SSH key in `~/.ssh/id_ed25519`) or fine-grained Personal Access Token (PAT with Repository Contents: Read/Write) configured in git remote URL.
 
 ## 5. Open Items (Next Steps)
 - **A1. Genesis**: auto-read git_tag/commit (no hardcoded forward-v1); add server_tz=EU_EET, MT5 server name, symbol, feed name; run_forward default EU_EET; test that 2026-03-10 00:00 server and 2026-10-27 00:00 server both map to 22:00 UTC of the previous day.

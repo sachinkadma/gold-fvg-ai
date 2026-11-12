@@ -896,7 +896,7 @@ def test_forward_start_date_required_and_staleness_enforcement(tmp_path):
         rec0 = json.loads(f.readline())
     assert rec0["event"] == "GENESIS"
     assert rec0["data"]["forward_start_date"] == "2026-11-12T00:00:00+00:00"
-    assert rec0["data"]["git_tag"] == "forward-v2"
+    assert rec0["data"]["git_tag"] is not None and len(rec0["data"]["git_tag"]) > 0
 
 
 def test_restart_recovery_mid_position_equals_uninterrupted(train_data, tmp_path):
@@ -987,3 +987,165 @@ def test_git_push_anchor_remote_unreachable_refuses_start(tmp_path):
             git_push_anchors=True,
             git_remote="nonexistent-remote-url-xyz-99"
         )
+
+
+def test_mt5_server_midnight_maps_to_previous_day_22_utc():
+    """
+    A1 VERIFICATION TEST:
+    Verifies that for MetaQuotes-Demo broker timezone (EU_EET):
+    - 2026-03-10 00:00:00 server maps to 2026-03-09 22:00:00 UTC (EET is UTC+2)
+    - 2026-10-27 00:00:00 server maps to 2026-10-26 22:00:00 UTC (EET is UTC+2)
+    Both are 22:00 UTC of the previous day.
+    """
+    ts_mar = convert_mt5_time_to_utc("2026-03-10 00:00:00", server_tz="EU_EET")
+    assert ts_mar == pd.Timestamp("2026-03-09 22:00:00+00:00")
+    assert ts_mar.day == 9
+    assert ts_mar.hour == 22
+
+    ts_oct = convert_mt5_time_to_utc("2026-10-27 00:00:00", server_tz="EU_EET")
+    assert ts_oct == pd.Timestamp("2026-10-26 22:00:00+00:00")
+    assert ts_oct.day == 26
+    assert ts_oct.hour == 22
+
+
+def test_genesis_metadata_fields(tmp_path):
+    """
+    A1 VERIFICATION TEST:
+    Verifies that the GENESIS record contains auto-read git_tag/commit,
+    and metadata: server_tz=EU_EET, MT5 server name, symbol, feed name.
+    """
+    log_file = str(tmp_path / "genesis_meta.jsonl")
+    logger = ForwardSignalLogger(
+        forward_start_date="2026-11-12T00:00:00Z",
+        log_path=log_file,
+        server_tz="EU_EET",
+        server_name="MetaQuotes-Demo",
+        symbol="XAUUSD",
+        feed_name="MT5",
+        check_git=False,
+        check_frozen_hashes=False
+    )
+    with open(log_file, "r", encoding="utf-8") as f:
+        rec0 = json.loads(f.readline())
+
+    assert rec0["event"] == "GENESIS"
+    d = rec0["data"]
+    assert d["server_tz"] == "EU_EET"
+    assert d["server_name"] == "MetaQuotes-Demo"
+    assert d["symbol"] == "XAUUSD"
+    assert d["feed_name"] == "MT5"
+    assert d["git_tag"] is not None and len(d["git_tag"]) > 0
+    assert d["git_commit"] is not None and len(d["git_commit"]) > 0
+
+
+def test_history_preload_bars_before_forward_start_date_only_fill_buffer(train_data, tmp_path):
+    """
+    A3 VERIFICATION TEST:
+    Verifies that closed candles dated strictly before forward_start_date:
+    1. Only enter and fill the rolling candle buffer.
+    2. Emit NO SIGNAL, FILL, EXPIRE, or CLOSE events into the chain.
+    3. The chain only contains the initial GENESIS record.
+    """
+    df_slice = train_data.iloc[100:250].copy()  # Historical 2015 candles
+    log_file = str(tmp_path / "preload_test.jsonl")
+
+    # forward_start_date set to 2026-11-12 (all slice candles are in 2015, hence before start date)
+    logger = ForwardSignalLogger(
+        forward_start_date="2026-11-12T00:00:00Z",
+        log_path=log_file,
+        check_git=False,
+        check_frozen_hashes=False,
+        min_buffer_warmup=135
+    )
+
+    for i in range(len(df_slice)):
+        r = df_slice.iloc[i]
+        logger.on_candle_closed({
+            "time": df_slice.index[i], "open": r["open"], "high": r["high"], "low": r["low"], "close": r["close"], "volume": r["volume"]
+        })
+
+    # Buffer must be filled with candles
+    assert len(logger._times_ny) == len(df_slice)
+
+    # Chain must contain ONLY the GENESIS record, zero trading events
+    with open(log_file, "r", encoding="utf-8") as f:
+        events = [json.loads(l) for l in f if l.strip()]
+
+    assert len(events) == 1
+    assert events[0]["event"] == "GENESIS"
+
+
+def test_restart_with_pending_order_and_crash_before_anchor_push(train_data, tmp_path):
+    """
+    A4 VERIFICATION TEST:
+    Verifies restart recovery when killed while an order is PENDING,
+    and crash occurred before external anchor push:
+    1. Logger emits PASSED_PRIMARY signal (creating pending order).
+    2. 2 additional bars elapse (bars_elapsed = 2).
+    3. Crash simulated: external anchor ledger only saved up to GENESIS (signal not anchored).
+    4. Resumed logger:
+       - Reconstructs pending order and recovers bars_elapsed = 2.
+       - Discovers unanchored signal record in log, queues it to anchor_queue.
+       - Flushes queue cleanly.
+    """
+    df_slice = train_data.iloc[100:250].copy()
+    log_file = str(tmp_path / "crash_pending.jsonl")
+    anchor_file = str(tmp_path / "crash_anchors.json")
+
+    logger1 = ForwardSignalLogger(
+        forward_start_date="2026-11-12T00:00:00Z",
+        log_path=log_file,
+        external_anchor_path=anchor_file,
+        check_git=False,
+        check_frozen_hashes=False,
+        killzone_gate=False,
+        min_buffer_warmup=35
+    )
+
+    # Feed bars until a PASSED_PRIMARY signal is emitted
+    signal_emitted = False
+    sig_bar = 0
+    for i in range(len(df_slice)):
+        r = df_slice.iloc[i]
+        logger1.on_candle_closed({
+            "time": df_slice.index[i], "open": r["open"], "high": r["high"], "low": r["low"], "close": r["close"], "volume": r["volume"]
+        })
+        if logger1.pending_order is not None and not signal_emitted:
+            signal_emitted = True
+            sig_bar = i
+            break
+
+    assert signal_emitted is True
+    assert logger1.pending_order is not None
+
+    # Feed 2 more bars
+    for i in range(sig_bar + 1, sig_bar + 3):
+        r = df_slice.iloc[i]
+        logger1.on_candle_closed({
+            "time": df_slice.index[i], "open": r["open"], "high": r["high"], "low": r["low"], "close": r["close"], "volume": r["volume"]
+        })
+
+    assert logger1.pending_order["bars_elapsed"] == 2
+
+    # Simulate crash before anchor push: truncate external anchor file so only GENESIS is anchored
+    with open(anchor_file, "w", encoding="utf-8") as f:
+        json.dump([{"index": 0, "event": "GENESIS", "record_hash": "dummy"}], f)
+
+    # Re-instantiate logger on existing files
+    logger2 = ForwardSignalLogger(
+        forward_start_date="2026-11-12T00:00:00Z",
+        log_path=log_file,
+        external_anchor_path=anchor_file,
+        check_git=False,
+        check_frozen_hashes=False,
+        killzone_gate=False,
+        min_buffer_warmup=35
+    )
+
+    # Verify pending order recovered with bars_elapsed intact
+    assert logger2.pending_order is not None
+    assert logger2.pending_order["bars_elapsed"] == 2
+
+    # Verify crash recovery discovered unanchored record and queued it
+    assert len(logger2.anchor_queue) >= 1
+

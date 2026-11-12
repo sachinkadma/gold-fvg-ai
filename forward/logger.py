@@ -49,7 +49,6 @@ SLIPPAGE_ASSUMED = 0.10
 COMMISSION_PER_LOT = 7.0
 ORDER_EXPIRY_BARS = 8
 MIN_BUFFER_WARMUP = 135
-FORWARD_GIT_TAG = "forward-v2"
 GENESIS_PREV_HASH = "0" * 64
 
 # FROZEN FILE SHA256 HASHES FOR PRE-FLIGHT INTEGRITY
@@ -81,6 +80,23 @@ def get_git_commit():
         return res.stdout.strip() if res.returncode == 0 else "UNKNOWN"
     except Exception:
         return "UNKNOWN"
+
+
+def get_git_tag():
+    """Auto-reads the current or closest git tag from the repository."""
+    try:
+        res = subprocess.run(["git", "describe", "--tags", "--exact-match"], capture_output=True, text=True, cwd=REPO_ROOT)
+        if res.returncode == 0 and res.stdout.strip():
+            return res.stdout.strip()
+        res = subprocess.run(["git", "describe", "--tags", "--abbrev=0"], capture_output=True, text=True, cwd=REPO_ROOT)
+        if res.returncode == 0 and res.stdout.strip():
+            return res.stdout.strip()
+        return "UNKNOWN"
+    except Exception:
+        return "UNKNOWN"
+
+
+FORWARD_GIT_TAG = get_git_tag()
 
 
 def is_git_clean(allow_untracked=True):
@@ -422,6 +438,9 @@ class ForwardSignalLogger:
         min_buffer_warmup=MIN_BUFFER_WARMUP,
         buffer_size=300,
         server_tz="EU_EET",
+        server_name="MetaQuotes-Demo",
+        symbol="XAUUSD",
+        feed_name="MT5",
         git_push_anchors=False,
         git_remote="origin",
         git_branch="forward-anchors"
@@ -440,9 +459,13 @@ class ForwardSignalLogger:
         self.min_buffer_warmup = min_buffer_warmup
         self.buffer_size = max(buffer_size, min_buffer_warmup)
         self.server_tz = server_tz
+        self.server_name = server_name
+        self.symbol = symbol
+        self.feed_name = feed_name
         self.git_push_anchors = git_push_anchors
         self.git_remote = git_remote
         self.git_branch = git_branch
+        self.last_setup_key = None
 
         # Forward Start Date staleness validation (< 1 day in the past)
         if forward_start_date is not None:
@@ -684,6 +707,29 @@ class ForwardSignalLogger:
                         )
             self._replay_state_from_log()
             self._load_buffer_snapshot()
+
+            # Recalculate pending order bars_elapsed from loaded buffer
+            if self.pending_order is not None and self._times_ny:
+                sig_t = pd.Timestamp(self.pending_order["sig_time_utc"])
+                if sig_t.tzinfo is None:
+                    sig_t = sig_t.tz_localize("UTC")
+                bars_elapsed = sum(1 for t_ny in self._times_ny if t_ny.tz_convert("UTC") > sig_t)
+                self.pending_order["bars_elapsed"] = bars_elapsed
+
+            # Crash-recovery: check for crash after append before anchor push (A4)
+            if self.external_anchor_path and os.path.exists(self.external_anchor_path):
+                anchors = load_external_anchors(self.external_anchor_path)
+                anchored_indices = {a["index"] for a in anchors if isinstance(a, dict) and "index" in a}
+                last_idx = self.current_index - 1
+                if last_idx >= 0 and last_idx not in anchored_indices:
+                    with open(self.log_path, "r", encoding="utf-8") as f:
+                        lines = [l.strip() for l in f if l.strip()]
+                    if lines:
+                        last_rec = json.loads(lines[-1])
+                        anchor_item = (last_rec["index"], last_rec["event"], last_rec["record_hash"])
+                        if anchor_item not in self.anchor_queue:
+                            self.anchor_queue.append(anchor_item)
+                            self._save_anchor_queue()
         else:
             if not self.forward_start_date:
                 raise ValueError(
@@ -831,9 +877,13 @@ class ForwardSignalLogger:
         now_utc = self.forward_start_date if self.forward_start_date else datetime.now(timezone.utc).isoformat()
         genesis_data = {
             "genesis_version": "v1.0",
-            "git_tag": FORWARD_GIT_TAG,
+            "git_tag": get_git_tag(),
             "git_commit": get_git_commit(),
             "forward_start_date": self.forward_start_date,
+            "symbol": self.symbol,
+            "server_name": self.server_name,
+            "feed_name": self.feed_name,
+            "server_tz": self.server_tz,
             "params_hash": PARAMS_HASH,
             "p_scaled": P_SCALED,
             "rr_target": RR_TARGET,
@@ -879,20 +929,58 @@ class ForwardSignalLogger:
         if self.last_candle_time_utc is not None and ts_utc <= self.last_candle_time_utc:
             return
 
+        # A3: History Preload Guard - candles before forward_start_date only seed buffer
+        if self.forward_start_date is not None:
+            start_dt_utc = pd.Timestamp(self.forward_start_date)
+            if start_dt_utc.tzinfo is None:
+                start_dt_utc = start_dt_utc.tz_localize("UTC")
+            else:
+                start_dt_utc = start_dt_utc.tz_convert("UTC")
+            if ts_utc < start_dt_utc:
+                self.last_candle_time_utc = ts_utc
+                self._times_ny.append(ts_ny)
+                self._opens.append(o)
+                self._highs.append(h)
+                self._lows.append(l)
+                self._closes.append(c)
+                self._volumes.append(v)
+                if len(self._times_ny) > self.buffer_size:
+                    self._times_ny.pop(0)
+                    self._opens.pop(0)
+                    self._highs.pop(0)
+                    self._lows.pop(0)
+                    self._closes.pop(0)
+                    self._volumes.pop(0)
+                self._save_buffer_snapshot()
+                return None
+
         # 1. GAP Detection
         if self.last_candle_time_utc is not None:
             diff = ts_utc - self.last_candle_time_utc
             if diff > timedelta(minutes=15):
                 prev_ny = self.last_candle_time_utc.tz_convert(NY_TZ)
-                is_weekend = (prev_ny.weekday() == 4 and prev_ny.hour >= 16) and (ts_ny.weekday() == 6 and ts_ny.hour >= 17)
-                if not is_weekend:
-                    missing_bars = int(diff.total_seconds() // 900) - 1
-                    self._append_event("GAP", ts_utc.isoformat(), {
-                        "gap_start_utc": self.last_candle_time_utc.isoformat(),
-                        "gap_end_utc": ts_utc.isoformat(),
-                        "elapsed_minutes": int(diff.total_seconds() // 60),
-                        "missing_bars": missing_bars
-                    })
+                missing_bars = int(diff.total_seconds() // 900) - 1
+
+                # Weekend close: Friday >= 16:45 NY to Sunday >= 17:00 NY
+                is_weekend = (prev_ny.weekday() == 4 and (prev_ny.hour > 16 or (prev_ny.hour == 16 and prev_ny.minute >= 45))) and \
+                             (ts_ny.weekday() == 6 and ts_ny.hour >= 17)
+                # Daily break: Monday-Thursday 16:45-17:15 NY to 18:00 NY
+                is_daily_break = (prev_ny.weekday() in (0, 1, 2, 3) and prev_ny.hour >= 16 and ts_ny.hour >= 18 and diff <= timedelta(hours=2))
+
+                if is_weekend:
+                    gap_type = "WEEKEND_MARKET_CLOSE"
+                elif is_daily_break:
+                    gap_type = "DAILY_MARKET_BREAK"
+                else:
+                    gap_type = "DOWNTIME_GAP"
+
+                self._append_event("GAP", ts_utc.isoformat(), {
+                    "gap_type": gap_type,
+                    "gap_start_utc": self.last_candle_time_utc.isoformat(),
+                    "gap_end_utc": ts_utc.isoformat(),
+                    "elapsed_minutes": int(diff.total_seconds() // 60),
+                    "missing_bars": missing_bars
+                })
 
         self.last_candle_time_utc = ts_utc
 
@@ -1069,6 +1157,11 @@ class ForwardSignalLogger:
                 t_idx = n_buffered - 1
                 sig = evaluate_causal_signal_at_bar(df_eval, t_idx, killzone_gate=False)
                 if sig is not None:
+                    setup_key = (sig["direction"], round(sig["entry"], 2), round(sig["sl"], 2), round(sig["tp"], 2))
+                    if setup_key == self.last_setup_key:
+                        return None
+                    self.last_setup_key = setup_key
+
                     self.signal_counter += 1
                     sig_id = f"SIG-{self.signal_counter:04d}"
 
@@ -1123,6 +1216,8 @@ class ForwardSignalLogger:
                             "sig_time_utc": ts_utc.isoformat(),
                             "bars_elapsed": 0
                         }
+                else:
+                    self.last_setup_key = None
 
 
 def replay_dry_run(
