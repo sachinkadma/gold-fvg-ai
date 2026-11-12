@@ -30,19 +30,16 @@
 - **Branch Protection**: Remote `forward-anchors` branch must have force-push disabled (`--force` prohibited).
 
 ## 5. Open Items (Next Steps)
-1. **Phase 2: Execution Fidelity Tracker**:
-   - Record real bid/ask spread at signal and fill times from live feed.
-   - Running comparison of realized spread vs assumed 0.50 pts (mean, median, worst).
-   - Report-only, never alter cost model. No slippage measurement in paper mode.
-2. **Phase 3: Monitor & Gates**:
-   - `forward/monitor.py`: Compute running $N$, win rate, net expectancy ($R$), profit factor, and 95% monthly-block bootstrap CI (exact method from `run_prereg_test.py`).
-   - Evaluate Section 5 gates: EARLY_FAIL ($N \ge 12$, expectancy $\le 0$), PASS_FWD ($N \ge 20$, expectancy $> 0$, 95% CI lower bound $> 0$), CONTINUE.
-   - Telegram alerts: new signal, trade closed, gate status change.
-   - Observation-only breakdown by long/short labeled "NOT FOR DECISIONS".
-3. **Phase 4: Tests & Docs**:
-   - Gate boundary pytest tests ($N=11, 12, 19, 20$).
-   - Golden-file / hash comparison on fixed TRAIN slice verifying candidate generator output is unchanged.
-   - Update `STATE.md`. Do not touch `PREREG_TEST.md`.
+- **A1. Genesis**: auto-read git_tag/commit (no hardcoded forward-v1); add server_tz=EU_EET, MT5 server name, symbol, feed name; run_forward default EU_EET; test that 2026-03-10 00:00 server and 2026-10-27 00:00 server both map to 22:00 UTC of the previous day.
+- **A2. Dry-run** (3 days live MT5, no orders): SIGNAL count by filter_status; dedupe repeated setups if found; N = PASSED_PRIMARY + FILLED + CLOSED only; label weekend market-close GAP separately from downtime GAP.
+- **A3. History preload**: bars before forward_start_date only fill the buffer; no SIGNAL/FILL/CLOSE for them; test.
+- **A4. Recovery**: rebuild buffer from MT5 history and compare with _buffer.json (chain is source of truth); tests for restart with PENDING order and crash after append before anchor push.
+- **A5. Anchor**: show `git ls-remote origin forward-anchors`; test that unreachable remote refuses startup; document deploy key/token for unattended push. Do not change remote settings.
+- **A6. Read-only**: explain how simulate_candidate_forward handled end-of-data unresolved trades in the TEST run (no changes to frozen files).
+- **A7. Final foreground pytest + verify.py on the tagged commit** (redirect to file, last 15 lines + exit code).
+- **B (Phase 2, after A is committed)**: execution_tracker.py. SPREAD_OBS event type in the chain, realized spread vs assumed 0.35 pts ONLY (mean, median, p95, worst, split London/NY AM). No slippage (not measurable in paper mode). Never alter cost model or net R.
+- **C (Phase 3)**: monitor.py. First quote PREREG_TEST.md Section 5 verbatim and implement only what it states; ask me about anything ambiguous (do not invent gates like INCONCLUSIVE_FINAL unless quoted). Early-fail checked after every closed trade once N>=12. Telegram alerts. Long/short block labeled NOT FOR DECISIONS.
+- **D (Phase 4)**: gate boundary tests (N=11/12/19/20), golden-file test on a TRAIN slice, STATE.md update. Do not edit PREREG_TEST.md.
 
 ## 6. Exact Operational Commands
 
