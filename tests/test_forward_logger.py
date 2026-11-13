@@ -1151,3 +1151,92 @@ def test_restart_with_pending_order_and_crash_before_anchor_push(train_data, tmp
     # Verify crash recovery discovered unanchored record and queued it
     assert len(logger2.anchor_queue) >= 1
 
+
+def test_git_anchor_push_filename_no_crlf_and_roundtrip(tmp_path):
+    """
+    Verifies that push_external_anchor_to_git does not introduce Windows CRLF (\r)
+    into the git tree entry filename, and that the anchor ledger retrieved from the branch
+    round-trips bit-for-bit and satisfies verify_against_anchor.
+    Runs locally in a temporary git repository with no network access.
+    """
+    import subprocess
+    import forward.logger as fl
+    from forward.logger import save_external_anchor, verify_against_anchor, push_external_anchor_to_git, compute_record_hash
+
+    # Set up a local "bare" remote and a working clone
+    remote_repo = tmp_path / "remote.git"
+    work_repo = tmp_path / "work"
+    subprocess.run(["git", "init", "--bare", str(remote_repo)], check=True, capture_output=True)
+    subprocess.run(["git", "clone", str(remote_repo), str(work_repo)], check=True, capture_output=True)
+
+    # Configure user in work repo
+    subprocess.run(["git", "config", "user.name", "Test Runner"], cwd=str(work_repo), check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=str(work_repo), check=True)
+
+    # Initial commit on main
+    dummy_file = work_repo / "README.md"
+    dummy_file.write_text("anchor test", encoding="utf-8")
+    subprocess.run(["git", "add", "README.md"], cwd=str(work_repo), check=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=str(work_repo), check=True, capture_output=True)
+    subprocess.run(["git", "push", "origin", "HEAD:main"], cwd=str(work_repo), check=True, capture_output=True)
+
+    # Create dummy log and anchor ledger
+    log_file = work_repo / "signals.jsonl"
+    anchor_file = work_repo / "anchors.json"
+
+    # Create a minimal valid 2-event log
+    rec0_hash = compute_record_hash("0" * 64, "GENESIS", "2026-11-12T00:00:00Z", {"genesis": True})
+    rec0 = {"index": 0, "prev_hash": "0" * 64, "event": "GENESIS", "timestamp_utc": "2026-11-12T00:00:00Z", "data": {"genesis": True}, "record_hash": rec0_hash}
+    rec1_hash = compute_record_hash(rec0_hash, "GAP", "2026-11-12T00:15:00Z", {"gap_type": "DOWNTIME_GAP"})
+    rec1 = {"index": 1, "prev_hash": rec0_hash, "event": "GAP", "timestamp_utc": "2026-11-12T00:15:00Z", "data": {"gap_type": "DOWNTIME_GAP"}, "record_hash": rec1_hash}
+
+    with open(str(log_file), "w", encoding="utf-8", newline="\n") as f:
+        f.write(json.dumps(rec0, separators=(",", ":")) + "\n")
+        f.write(json.dumps(rec1, separators=(",", ":")) + "\n")
+
+    # Save anchors
+    save_external_anchor(str(anchor_file), 0, "GENESIS", rec0_hash, git_push=False)
+    save_external_anchor(str(anchor_file), 1, "GAP", rec1_hash, git_push=False)
+
+    orig_root = fl.REPO_ROOT
+    try:
+        fl.REPO_ROOT = str(work_repo)
+        ok, msg = push_external_anchor_to_git(str(anchor_file), remote="origin", branch="forward-anchors")
+        assert ok is True, f"push_external_anchor_to_git failed: {msg}"
+
+        # 1. Inspect tree object on forward-anchors branch
+        target_branch = "forward-anchors"
+        tree_hash = subprocess.check_output(
+            ["git", "rev-parse", f"refs/heads/{target_branch}^{{tree}}"],
+            cwd=str(work_repo),
+            text=True
+        ).strip()
+
+        raw_ls = subprocess.check_output(
+            ["git", "ls-tree", tree_hash],
+            cwd=str(work_repo),
+            text=True
+        )
+
+        # Assert no carriage return in tree listing and filename matches exactly "anchors.json"
+        assert "\r" not in raw_ls, f"Carriage return \\r found in git ls-tree output: {repr(raw_ls)}"
+        assert '"anchors.json' not in raw_ls, f"Quoted escaped filename found in ls-tree: {repr(raw_ls)}"
+        assert "\tanchors.json\n" in raw_ls
+
+        # 2. Fetch ledger back from branch and verify against log
+        blob_content = subprocess.check_output(
+            ["git", "show", f"refs/heads/{target_branch}:anchors.json"],
+            cwd=str(work_repo),
+            text=True
+        )
+        fetched_ledger_path = str(tmp_path / "fetched_anchors.json")
+        with open(fetched_ledger_path, "w", encoding="utf-8", newline="\n") as f:
+            f.write(blob_content)
+
+        v_ok, v_msg, v_count = verify_against_anchor(str(log_file), fetched_ledger_path)
+        assert v_ok is True, f"verify_against_anchor failed on fetched ledger: {v_msg}"
+        assert v_count == 2
+    finally:
+        fl.REPO_ROOT = orig_root
+
+

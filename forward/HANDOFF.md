@@ -35,7 +35,9 @@
 - **Stale Feed Rule**: >45 min without new closed candle during open market hours only. Weekend (Fri 17:00 to Sun 18:00 NY) and daily break (Mon-Thu 17:00–18:00 NY) suppress alert.
 
 ## 5. Open Items
-- None. Infrastructure complete (Phases 1, A–D, L). **Do not start the real forward run** until authorized.
+- **Rehearsal Redo**: Rehearsal must be redone on tag `forward-v12` to verify that external anchors commit with clean filenames (no Windows CRLF trailing `\r`).
+- **Clean Anchor Branch**: The real `forward-anchors` branch must be clean (or recreated) before production launch.
+- **Do not start the real forward run** until authorized.
 
 ## 6. Exact Operational Commands
 

@@ -447,7 +447,7 @@ class ForwardMonitor:
         if not out_path:
             return
         os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
-        with open(out_path, "w", encoding="utf-8") as f:
+        with open(out_path, "w", encoding="utf-8", newline="\n") as f:
             json.dump(status, f, indent=2, default=str)
 
     def format_console_summary(self, status: Dict[str, Any]) -> str:

@@ -37,8 +37,10 @@ Ensure all required environment variables are set in the Windows environment or 
   git ls-remote origin forward-anchors
   # Must return the remote branch commit hash without error
   ```
+- **Clean Branch Guarantee**: Real `forward-anchors` must be clean (or recreated) before launch. Ensure `git ls-tree -r origin/forward-anchors` contains clean filenames with no trailing `\r` or carriage return artifacts.
 
 ## 5. Mandatory 48–72h Rehearsal Drill & Verification
+- Rehearsal must be redone on the latest tag (`forward-v12`) to verify the Windows CRLF git mktree fix.
 - Run rehearsal mode to confirm 24x5 live stability without touching production logs or branches:
   ```powershell
   python forward/run_forward.py --forward-start-date "2026-11-12T00:00:00Z" --rehearsal
@@ -48,6 +50,7 @@ Ensure all required environment variables are set in the Windows environment or 
   python forward/launch/rehearsal_check.py --log forward/rehearsal.jsonl --anchor-ledger forward/rehearsal_anchors.json
   ```
   *Must return EXIT 0 (all checks clean: valid chain, valid anchors, no duplicate candles, no unexpected downtime).*
+- Verify that `git ls-tree -r origin/forward-anchors-rehearsal` shows `rehearsal_anchors.json` without trailing `\r`.
 
 ## 6. Pre-Flight Protocol Audit Update (MANDATORY BEFORE FIRST RUN)
 Before starting the live forward run, update `forward/PROTOCOL_NOTES.md` with:

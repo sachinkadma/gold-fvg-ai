@@ -300,13 +300,13 @@ def push_external_anchor_to_git(anchor_path, remote="origin", branch="forward-an
         # 1. Create git blob object directly from file
         blob_hash = subprocess.check_output(["git", "hash-object", "-w", rel_path], cwd=REPO_ROOT, text=True).strip()
 
-        # 2. Build tree object containing the anchor ledger
+        # 2. Build tree object containing the anchor ledger (bytes input prevents Windows CRLF translation)
         file_name = os.path.basename(rel_path)
-        tree_input = f"100644 blob {blob_hash}\t{file_name}\n"
-        tree_proc = subprocess.run(["git", "mktree"], input=tree_input, capture_output=True, text=True, cwd=REPO_ROOT)
+        tree_input_bytes = f"100644 blob {blob_hash}\t{file_name}\n".encode("utf-8")
+        tree_proc = subprocess.run(["git", "mktree"], input=tree_input_bytes, capture_output=True, cwd=REPO_ROOT)
         if tree_proc.returncode != 0:
-            return False, f"git mktree failed: {tree_proc.stderr.strip()}"
-        tree_hash = tree_proc.stdout.strip()
+            return False, f"git mktree failed: {tree_proc.stderr.decode('utf-8', errors='replace').strip()}"
+        tree_hash = tree_proc.stdout.decode("utf-8", errors="replace").strip()
 
         # 3. Locate parent commit on target branch (local ref or remote tracking ref)
         target_branch = branch or "forward-anchors"
@@ -364,12 +364,12 @@ def save_external_anchor(anchor_path, record_index, event_type, record_hash, git
 
     tmp_path = abs_path + ".tmp"
     try:
-        with open(tmp_path, "w", encoding="utf-8") as f:
+        with open(tmp_path, "w", encoding="utf-8", newline="\n") as f:
             json.dump(anchors, f, indent=2)
         try:
             os.replace(tmp_path, abs_path)
         except OSError:
-            with open(abs_path, "w", encoding="utf-8") as f:
+            with open(abs_path, "w", encoding="utf-8", newline="\n") as f:
                 json.dump(anchors, f, indent=2)
             if os.path.exists(tmp_path):
                 try:
@@ -563,12 +563,12 @@ class ForwardSignalLogger:
         if self.anchor_queue:
             tmp_path = self.queue_path + ".tmp"
             try:
-                with open(tmp_path, "w", encoding="utf-8") as f:
+                with open(tmp_path, "w", encoding="utf-8", newline="\n") as f:
                     json.dump(self.anchor_queue, f)
                 try:
                     os.replace(tmp_path, self.queue_path)
                 except OSError:
-                    with open(self.queue_path, "w", encoding="utf-8") as f:
+                    with open(self.queue_path, "w", encoding="utf-8", newline="\n") as f:
                         json.dump(self.anchor_queue, f)
                     if os.path.exists(tmp_path):
                         try:
@@ -599,12 +599,12 @@ class ForwardSignalLogger:
             ])
         tmp = self.buffer_path + ".tmp"
         try:
-            with open(tmp, "w", encoding="utf-8") as f:
+            with open(tmp, "w", encoding="utf-8", newline="\n") as f:
                 json.dump(buf_data, f)
             try:
                 os.replace(tmp, self.buffer_path)
             except OSError:
-                with open(self.buffer_path, "w", encoding="utf-8") as f:
+                with open(self.buffer_path, "w", encoding="utf-8", newline="\n") as f:
                     json.dump(buf_data, f)
                 if os.path.exists(tmp):
                     try:
@@ -854,7 +854,7 @@ class ForwardSignalLogger:
             "record_hash": rec_hash
         }
 
-        with open(self.log_path, "a", encoding="utf-8") as f:
+        with open(self.log_path, "a", encoding="utf-8", newline="\n") as f:
             f.write(json.dumps(record, separators=(",", ":")) + "\n")
 
         # Update chain pointers
