@@ -82,8 +82,8 @@ if __name__ == "__main__":
     print(feats.describe())
 
 
-def test_feature_generation():
-    df = load_and_clean_data("data/xauusd_15m_long.csv", data_tz="UTC", target_tz="America/New_York", verbose=False)
+def test_feature_generation(train_data=None):
+    df = train_data if train_data is not None else load_and_clean_data("data/xauusd_15m_long.csv", data_tz="UTC", target_tz="America/New_York", verbose=False)
     df_sample = df.iloc[:200]
     feats = precompute_market_features(df_sample)
     assert len(feats) == len(df_sample)

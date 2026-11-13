@@ -13,15 +13,7 @@ REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
-from core.data_loader import load_and_clean_data
 from core.signals import is_in_killzone
-
-
-@pytest.fixture(scope="module")
-def sample_dst_data():
-    """Loads a fast slice of data covering 2021 DST transitions."""
-    df = load_and_clean_data(os.path.join(REPO_ROOT, "data", "xauusd_15m_long.csv"), data_tz="UTC", verbose=False)
-    return df
 
 
 def test_timezone_is_america_new_york(sample_dst_data):

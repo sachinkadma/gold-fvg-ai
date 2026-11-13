@@ -3,6 +3,7 @@ Test candidate generation across all 24 hours of the day (killzone_gate=False).
 """
 
 import time
+import pytest
 import pandas as pd
 import numpy as np
 import sys, os
@@ -19,8 +20,8 @@ except ImportError:
     from data_loader import load_and_clean_data
     from signals import evaluate_causal_signal_at_bar
 
-def test_candidates():
-    df = load_and_clean_data("data/xauusd_15m_long.csv", data_tz="UTC", target_tz="America/New_York", verbose=False)
+def test_candidates(train_data=None):
+    df = train_data if train_data is not None else load_and_clean_data("data/xauusd_15m_long.csv", data_tz="UTC", target_tz="America/New_York", verbose=False)
     df_train = df.loc["2015-01-01":"2021-12-31"]
 
     t0 = time.time()
@@ -43,7 +44,8 @@ def test_candidates():
     assert isinstance(candidates, list)
 
 
-def test_candidate_generator_golden_train_slice():
+@pytest.mark.slow
+def test_candidate_generator_golden_train_slice(train_data=None):
     """
     Phase D Golden-File Test:
     Verifies that the frozen causal candidate generator output on a fixed TRAIN slice
@@ -54,7 +56,7 @@ def test_candidate_generator_golden_train_slice():
     import json
     import hashlib
 
-    df = load_and_clean_data("data/xauusd_15m_long.csv", data_tz="UTC", target_tz="America/New_York", verbose=False)
+    df = train_data if train_data is not None else load_and_clean_data("data/xauusd_15m_long.csv", data_tz="UTC", target_tz="America/New_York", verbose=False)
     df_slice = df.iloc[:500]  # First 500 bars of TRAIN
 
     candidates = []

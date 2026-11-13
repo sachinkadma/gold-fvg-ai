@@ -286,7 +286,8 @@ def test_rehearsal_check_tool(tmp_path):
     assert audit_rehearsal_log(dirty_log, dirty_anchors) is False
 
 
-def test_rehearsal_mode_end_to_end_train_week(tmp_path):
+@pytest.mark.slow
+def test_rehearsal_mode_end_to_end_train_week(tmp_path, train_data=None):
     """
     End-to-end test in rehearsal mode:
     Replays a historical TRAIN week (2015-01-02 to 2015-01-09) containing filled and closed trades.
@@ -297,7 +298,7 @@ def test_rehearsal_mode_end_to_end_train_week(tmp_path):
     4. Resulting hash chain is cryptographically valid (verify_chain returns True).
     """
     from core.data_loader import load_and_clean_data
-    df_raw = load_and_clean_data(
+    df_raw = train_data if train_data is not None else load_and_clean_data(
         "data/xauusd_15m_long.csv",
         data_tz="UTC",
         target_tz="America/New_York",

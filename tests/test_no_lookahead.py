@@ -20,13 +20,6 @@ except ImportError:
     from signals import evaluate_causal_signal_at_bar
 
 
-@pytest.fixture(scope="module")
-def dataset():
-    """Loads clean 15m dataset for testing."""
-    df = load_and_clean_data(verbose=False)
-    return df
-
-
 def test_no_lookahead(dataset):
     """
     For 20 random timestamps, compute signal using full data,

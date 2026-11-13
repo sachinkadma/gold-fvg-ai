@@ -52,18 +52,6 @@ from forward.logger import (
 )
 
 
-@pytest.fixture(scope="module")
-def train_data():
-    """Loads cleaned dataset once for all slice tests."""
-    df = load_and_clean_data(
-        "data/xauusd_15m_long.csv",
-        data_tz="UTC",
-        target_tz="America/New_York",
-        verbose=False
-    )
-    return df
-
-
 def test_hash_chain_valid_and_tamper_detection(tmp_path):
     """Verifies that a valid log passes verify_chain, but any modification or deletion fails."""
     log_file = str(tmp_path / "signals.jsonl")
@@ -411,6 +399,7 @@ def test_outside_killzone_signal_produces_skipped_record(train_data, tmp_path):
     assert logger.pending_order is None
 
 
+@pytest.mark.slow
 def test_rolling_buffer_parity_against_full_history(train_data):
     """
     CONFIRMATION TEST 2:
@@ -443,6 +432,7 @@ def test_rolling_buffer_parity_against_full_history(train_data):
     assert full_signals == buf_signals, "Rolling buffer signals diverged from full-history signals!"
 
 
+@pytest.mark.slow
 def test_buffer_135_parity_vs_full_history(train_data):
     """
     CONFIRMATION TEST 2B:
@@ -571,6 +561,7 @@ def test_mt5_time_conversion_us_vs_eu_dst():
     assert u_oct.hour == 11
 
 
+@pytest.mark.slow
 def test_logger_fills_vs_backtester_train_slice(train_data, tmp_path):
     """
     PARITY TEST 1: Baseline 2-Month Slice (2015-01-01 to 2015-02-28).
@@ -651,6 +642,7 @@ def test_logger_fills_vs_backtester_train_slice(train_data, tmp_path):
             assert "TP" in pm_outcome["exit_reason_20"]
 
 
+@pytest.mark.slow
 def test_logger_parity_dst_spring_slice(train_data, tmp_path):
     """
     PARITY TEST 2: Spring Forward DST Slice (March 01 - March 31, 2015).
@@ -718,6 +710,7 @@ def test_logger_parity_dst_spring_slice(train_data, tmp_path):
         assert cl_e["net_r"] == pm_outcome["net_r_20"]
 
 
+@pytest.mark.slow
 def test_logger_parity_november_fallback_dst_slice(train_data, tmp_path):
     """
     PARITY TEST 3: Fall Back DST Slice (October 25 - November 15, 2015).
@@ -785,6 +778,7 @@ def test_logger_parity_november_fallback_dst_slice(train_data, tmp_path):
         assert cl_e["net_r"] == pm_outcome["net_r_20"]
 
 
+@pytest.mark.slow
 def test_logger_parity_valid_period_slice(train_data, tmp_path):
     """
     PARITY TEST 4: VALID Period Slice (January 01 - March 31, 2020).
@@ -852,6 +846,7 @@ def test_logger_parity_valid_period_slice(train_data, tmp_path):
         assert cl_e["net_r"] == pm_outcome["net_r_20"]
 
 
+@pytest.mark.slow
 def test_dry_run_replay(train_data, tmp_path):
     """
     Verifies replay_dry_run functionality:
@@ -899,6 +894,7 @@ def test_forward_start_date_required_and_staleness_enforcement(tmp_path):
     assert rec0["data"]["git_tag"] is not None and len(rec0["data"]["git_tag"]) > 0
 
 
+@pytest.mark.slow
 def test_restart_recovery_mid_position_equals_uninterrupted(train_data, tmp_path):
     """
     CONFIRMATION TEST 7:

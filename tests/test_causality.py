@@ -21,12 +21,6 @@ except ImportError:
     from signals import evaluate_causal_signal_at_bar
 
 
-@pytest.fixture(scope="module")
-def gold_data():
-    df = load_and_clean_data(config.DATA_PATH, data_tz=config.DATA_TZ, verbose=False)
-    return df
-
-
 def test_no_lookahead(gold_data):
     """
     Causality verification:
