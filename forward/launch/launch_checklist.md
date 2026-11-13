@@ -7,7 +7,9 @@ Strict step-by-step pre-flight procedures to execute before initiating the forwa
   ```powershell
   git clone https://github.com/sachinkadma/gold-fvg-ai.git forward_runner
   cd forward_runner
-  git checkout forward-v9
+  git checkout forward-v12
+  pip install -r requirements.txt
+  # Note: data/ is gitignored; historical datasets are not required for forward runner operation.
   ```
 - Verify git status is completely clean:
   ```powershell
@@ -16,15 +18,13 @@ Strict step-by-step pre-flight procedures to execute before initiating the forwa
   ```
 
 ## 2. Environment Variables Setup
-Ensure all required environment variables are set in the Windows environment or user profile:
-- `MT5_LOGIN`: MetaTrader 5 account login (e.g. `115395873`)
+Ensure required environment variables are set in the Windows environment or user profile (start date is supplied via CLI):
+- `MT5_LOGIN`: MetaTrader 5 account login (e.g. `<YOUR_MT5_LOGIN>`)
 - `MT5_PASSWORD`: MetaTrader 5 account password
 - `MT5_SERVER`: MetaTrader 5 broker server (e.g. `MetaQuotes-Demo`)
 - `MT5_PATH`: Path to terminal binary (e.g. `C:\Program Files\MetaTrader 5\terminal64.exe`)
 - `TELEGRAM_BOT_TOKEN`: Telegram bot token for alerting
 - `TELEGRAM_CHAT_ID`: Telegram channel/chat ID for alerts and external head hash anchoring
-- `FORWARD_START_DATE`: Exact UTC ISO startup timestamp (e.g. `2026-11-12T00:00:00Z`).
-  *Enforces the 1-day staleness rule: startup refuses if start date is >24 hours in the past.*
 
 ## 3. MetaTrader 5 Broker Connection
 - Start MetaTrader 5 terminal and verify demo account is logged in.
@@ -41,9 +41,15 @@ Ensure all required environment variables are set in the Windows environment or 
 
 ## 5. Mandatory 48–72h Rehearsal Drill & Verification
 - Rehearsal must be redone on the latest tag (`forward-v12`) to verify the Windows CRLF git mktree fix.
-- Run rehearsal mode to confirm 24x5 live stability without touching production logs or branches:
+- Run rehearsal mode to confirm 24x5 live stability without touching production logs or branches (dynamically compute current UTC start to avoid staleness):
   ```powershell
-  python forward/run_forward.py --forward-start-date "2026-11-12T00:00:00Z" --rehearsal
+  $RehearsalStart = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+  python forward/run_forward.py --forward-start-date $RehearsalStart --rehearsal
+  ```
+- For kill and reboot drills, run rehearsal in a supervised auto-restart loop:
+  ```powershell
+  $RehearsalStart = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+  while ($true) { python forward/run_forward.py --forward-start-date $RehearsalStart --rehearsal; Start-Sleep -Seconds 5 }
   ```
 - Run the read-only rehearsal check:
   ```powershell
