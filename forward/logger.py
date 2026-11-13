@@ -51,13 +51,14 @@ ORDER_EXPIRY_BARS = 8
 MIN_BUFFER_WARMUP = 135
 GENESIS_PREV_HASH = "0" * 64
 
-# FROZEN FILE SHA256 HASHES FOR PRE-FLIGHT INTEGRITY
+# FROZEN FILE SHA256 HASHES FOR PRE-FLIGHT INTEGRITY (LF-CANONICAL)
+# All hashes strictly match canonical LF git blobs stored in the repository.
 FROZEN_FILE_HASHES = {
-    "core/signals.py": "786c1c3b820831706db091ea7e904765b4614c0e3c356893078c2c9eb09e2d28",
+    "core/signals.py": "88f8f3bfb91ea78016723a3bd8e7693c036ab0192c36290a718a215b2c36261a",
     "core/config.py": "af1afb8cdf46d8120a81000635193fe43e85ced5628b0d9296bc5ccd56af6576",
-    "core/backtester.py": "398d2f251f5f8a96ddfae89096e9120128797243e655739f8fa92540d0ff615d",
+    "core/backtester.py": "79fdc6df9750a32979fc7cd797d0e73c24edefdf22ddeabf5760230e9fda85e2",
     "research/PREREG_TEST.md": "6aca6d3c8f3d00a973daab9d55cd2ce42dcc142be587890ce11fd003ce2b801c",
-    "research/meta_labeling/pipeline_metalabeling.py": "f7e7bcee6e108c93d4e182206bd3f4ba0f2da8ab68e9531d11bce487a0d705c4"
+    "research/meta_labeling/pipeline_metalabeling.py": "f9f42f479cf5edebb37ef448a650e40e3630e2e386e991fe134a40b3039e08aa"
 }
 
 

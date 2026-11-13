@@ -1,0 +1,14 @@
+# Minimal runtime and verification dependencies for forward paper-trading harness
+# Excludes heavy ML/UI frameworks (torch, ultralytics, streamlit, sentence-transformers, opencv)
+
+pandas
+numpy
+scipy
+scikit-learn
+lightgbm
+matplotlib
+requests
+pytest
+pyarrow
+python-dotenv
+MetaTrader5; sys_platform == 'win32'

@@ -8,9 +8,10 @@
 
 ## 2. Current State
 - **Branch / Commit**: `reorg` (Pre-rehearsal cleanup complete).
-- **Tags**: `forward-v1`..`forward-v10`, `prereg-v1`..`prereg-v4`. Tags pushed to `origin`.
-- **Pytest**: 64 passed in test suite (Exit Code: 0).
+- **Tags**: `forward-v1`..`forward-v14`, `prereg-v1`..`prereg-v4`.
+- **Pytest**: 65 passed in test suite (Exit Code: 0).
 - **Verify.py**: PASS (Exit Code: 0) — SHA256 integrity verified against baseline `trades.csv`.
+- **Runtime**: `requirements-forward.txt` minimal dependencies (heavy ML/UI libraries excluded).
 
 ## 3. Architecture & File Inventory
 - `forward/__init__.py`: Package init.
@@ -35,7 +36,7 @@
 - **Stale Feed Rule**: >45 min without new closed candle during open market hours only. Weekend (Fri 17:00 to Sun 18:00 NY) and daily break (Mon-Thu 17:00–18:00 NY) suppress alert.
 
 ## 5. Open Items
-- **Rehearsal Redo**: Rehearsal must be redone on tag `forward-v12` to verify that external anchors commit with clean filenames (no Windows CRLF trailing `\r`).
+- **Rehearsal Redo**: Rehearsal must be performed on tag `forward-v14` to verify that external anchors commit with clean filenames (no Windows CRLF trailing `\r`) and isolated execution.
 - **Clean Anchor Branch**: The real `forward-anchors` branch must be clean (or recreated) before production launch.
 - **Do not start the real forward run** until authorized.
 
@@ -46,13 +47,17 @@
 python verify.py > out/verify.txt 2>&1; Add-Content out/verify.txt "EXIT=$LASTEXITCODE"
 
 # 48-72h rehearsal (isolated mode: rehearsal.jsonl and forward-anchors-rehearsal branch)
-python forward/run_forward.py --forward-start-date "2026-11-12T00:00:00Z" --rehearsal
+$StartDate = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+python forward/run_forward.py --forward-start-date $StartDate --rehearsal
+
+# Supervised rehearsal for kill/reboot drills:
+powershell -ExecutionPolicy Bypass -File forward/launch/run_forever.ps1 -ForwardStartDate $StartDate -Rehearsal
 
 # Audit rehearsal run
 python forward/launch/rehearsal_check.py --log forward/rehearsal.jsonl --anchor-ledger forward/rehearsal_anchors.json
 
 # Production (after checklist complete, protocol notes committed)
-.\forward\launch\run_forever.ps1   # supervisor (restarts automatically)
+.\forward\launch\run_forever.ps1 -ForwardStartDate "YYYY-MM-DDTHH:MM:SSZ"   # supervisor (restarts automatically)
 python forward/launch/heartbeat.py  # separate window
 
 # Monitor gate status
