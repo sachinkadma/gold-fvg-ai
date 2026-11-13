@@ -305,8 +305,11 @@ def push_external_anchor_to_git(anchor_path, remote="origin", branch="forward-an
         tree_input_bytes = f"100644 blob {blob_hash}\t{file_name}\n".encode("utf-8")
         tree_proc = subprocess.run(["git", "mktree"], input=tree_input_bytes, capture_output=True, cwd=REPO_ROOT)
         if tree_proc.returncode != 0:
-            return False, f"git mktree failed: {tree_proc.stderr.decode('utf-8', errors='replace').strip()}"
-        tree_hash = tree_proc.stdout.decode("utf-8", errors="replace").strip()
+            err_raw = tree_proc.stderr
+            err_msg = err_raw.decode("utf-8", errors="replace").strip() if isinstance(err_raw, bytes) else str(err_raw).strip()
+            return False, f"git mktree failed: {err_msg}"
+        out_raw = tree_proc.stdout
+        tree_hash = out_raw.decode("utf-8", errors="replace").strip() if isinstance(out_raw, bytes) else str(out_raw).strip()
 
         # 3. Locate parent commit on target branch (local ref or remote tracking ref)
         target_branch = branch or "forward-anchors"
