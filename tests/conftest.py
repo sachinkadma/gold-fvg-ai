@@ -24,6 +24,7 @@ def train_data():
     """
     Session-scoped fixture providing the cleaned TRAIN dataset (xauusd_15m_long.csv).
     Loaded once and shared across all test files.
+    Strictly sliced to the TRAIN period (up to 2021-12-31) so tests never touch TEST rows.
     """
     global _TRAIN_DATA_CACHE
     if _TRAIN_DATA_CACHE is None:
@@ -31,16 +32,19 @@ def train_data():
         src_path = os.path.join(REPO_ROOT, "data", "xauusd_15m_long.csv")
         if os.path.exists(cache_path) and os.path.exists(src_path) and os.path.getmtime(cache_path) >= os.path.getmtime(src_path):
             try:
-                _TRAIN_DATA_CACHE = pd.read_parquet(cache_path)
+                cached = pd.read_parquet(cache_path)
+                if cached.index.max() <= pd.Timestamp("2021-12-31 23:59:59", tz=cached.index.tz):
+                    _TRAIN_DATA_CACHE = cached
             except Exception:
                 _TRAIN_DATA_CACHE = None
         if _TRAIN_DATA_CACHE is None:
-            _TRAIN_DATA_CACHE = load_and_clean_data(
+            full_df = load_and_clean_data(
                 src_path,
                 data_tz="UTC",
                 target_tz="America/New_York",
                 verbose=False
             )
+            _TRAIN_DATA_CACHE = full_df.loc[:"2021-12-31 23:59:59"].copy()
             try:
                 _TRAIN_DATA_CACHE.to_parquet(cache_path)
             except Exception:
@@ -55,15 +59,13 @@ def sample_dst_data(train_data):
 
 
 @pytest.fixture(scope="session")
-def gold_data():
+def gold_data(train_data):
     """
-    Session-scoped fixture providing the default 15m dataset.
-    Loaded once and shared across causality and lookahead tests.
+    Session-scoped fixture providing historical data for causality and lookahead tests.
+    Shares the train_data fixture so tests strictly remain in the TRAIN split
+    and avoid loading external/TEST files.
     """
-    global _GOLD_DATA_CACHE
-    if _GOLD_DATA_CACHE is None:
-        _GOLD_DATA_CACHE = load_and_clean_data(verbose=False)
-    return _GOLD_DATA_CACHE
+    return train_data
 
 
 @pytest.fixture(scope="session")
