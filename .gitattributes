@@ -1,0 +1,5 @@
+core/signals.py text eol=lf
+core/config.py text eol=lf
+core/backtester.py text eol=lf
+research/PREREG_TEST.md text eol=lf
+research/meta_labeling/pipeline_metalabeling.py text eol=lf
