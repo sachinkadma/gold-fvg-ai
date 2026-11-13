@@ -17,3 +17,13 @@ data/
 out/
 *.log
 forward/launch/*.log
+
+# Forward runtime logs, buffers, queues, anchors, status, and backups
+forward/*.jsonl
+forward/*_buffer.json
+forward/*_anchor_queue.json
+forward/*anchors.json
+forward/*_status.json
+forward/backups/
+forward/*.bak
+*.bak

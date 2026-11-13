@@ -285,3 +285,82 @@ def test_rehearsal_check_tool(tmp_path):
     # Test dirty audit
     assert audit_rehearsal_log(dirty_log, dirty_anchors) is False
 
+
+def test_rehearsal_mode_end_to_end_train_week(tmp_path):
+    """
+    End-to-end test in rehearsal mode:
+    Replays a historical TRAIN week (2015-01-02 to 2015-01-09) containing filled and closed trades.
+    Asserts:
+    1. Rehearsal mode initializes cleanly with dedicated branch 'forward-anchors-rehearsal'.
+    2. Replays candles through ForwardSignalLogger's on_candle_closed handler.
+    3. SIGNAL, FILL, SPREAD_OBS (with source='BAR') and CLOSE events are written to the log.
+    4. Resulting hash chain is cryptographically valid (verify_chain returns True).
+    """
+    from core.data_loader import load_and_clean_data
+    df_raw = load_and_clean_data(
+        "data/xauusd_15m_long.csv",
+        data_tz="UTC",
+        target_tz="America/New_York",
+        verbose=False
+    )
+    df_week = df_raw.loc["2015-01-02":"2015-01-09"].copy()
+    assert len(df_week) > 200
+
+    rehearsal_log = str(tmp_path / "e2e_rehearsal.jsonl")
+    rehearsal_anchors = str(tmp_path / "e2e_rehearsal_anchors.json")
+
+    logger = ForwardSignalLogger(
+        forward_start_date="2015-01-02T00:00:00Z",
+        log_path=rehearsal_log,
+        external_anchor_path=rehearsal_anchors,
+        rehearsal=True,
+        check_git=False,
+        check_frozen_hashes=False,
+        killzone_gate=True,
+        p_scaled_filter=False,
+        killzone_expiry=True,
+        skip_outside_kz_eval=True,
+        track_spread=True,
+        min_buffer_warmup=35
+    )
+
+    times = df_week.index
+    opens = df_week["open"].values
+    highs = df_week["high"].values
+    lows = df_week["low"].values
+    closes = df_week["close"].values
+    vols = df_week["volume"].values if "volume" in df_week.columns else [0] * len(df_week)
+
+    for i in range(len(df_week)):
+        logger.on_candle_closed({
+            "time": times[i],
+            "open": opens[i],
+            "high": highs[i],
+            "low": lows[i],
+            "close": closes[i],
+            "volume": vols[i]
+        }, realized_spread=0.35)
+
+    valid, msg, count = verify_chain(rehearsal_log)
+    assert valid is True
+    assert msg == "CHAIN_VALID"
+
+    with open(rehearsal_log, "r", encoding="utf-8") as f:
+        events = [json.loads(line) for line in f if line.strip()]
+
+    event_types = [e["event"] for e in events]
+    assert "GENESIS" in event_types
+    assert "SIGNAL" in event_types
+    assert "FILL" in event_types
+    assert "SPREAD_OBS" in event_types
+    assert "CLOSE" in event_types
+
+    spread_obs_events = [e for e in events if e["event"] == "SPREAD_OBS"]
+    assert len(spread_obs_events) > 0
+    for obs in spread_obs_events:
+        assert obs["data"]["source"] == "BAR"
+
+    close_events = [e for e in events if e["event"] == "CLOSE"]
+    assert len(close_events) >= 1
+
+

@@ -7,9 +7,9 @@
 - **Tuning/Filtering**: No new filters, no parameter tuning. Long/short is strictly observation-only ("NOT FOR DECISIONS").
 
 ## 2. Current State
-- **Branch / Commit**: `reorg` (Pre-rehearsal checks complete).
-- **Tags**: `forward-v1`..`forward-v9`, `prereg-v1`..`prereg-v4`. Tags pushed to `origin`.
-- **Pytest**: 63 passed in test suite (Exit Code: 0).
+- **Branch / Commit**: `reorg` (Pre-rehearsal cleanup complete).
+- **Tags**: `forward-v1`..`forward-v10`, `prereg-v1`..`prereg-v4`. Tags pushed to `origin`.
+- **Pytest**: 64 passed in test suite (Exit Code: 0).
 - **Verify.py**: PASS (Exit Code: 0) — SHA256 integrity verified against baseline `trades.csv`.
 
 ## 3. Architecture & File Inventory
