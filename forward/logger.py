@@ -250,7 +250,18 @@ def convert_mt5_time_to_utc(server_time, server_tz="US_EET"):
         - 'EU_EET' / 'Europe/Athens' (European Union directive DST transitions)
         - 'UTC' / 'GMT' (Direct UTC timestamp)
     """
-    ts = pd.Timestamp(server_time)
+    if isinstance(server_time, (int, float, np.integer, np.floating)):
+        ts = pd.to_datetime(server_time, unit="s")
+    else:
+        ts = pd.Timestamp(server_time)
+
+    # Causal Temporal Guard (The 1969 Rule)
+    if ts.year < 2020:
+        raise ValueError(
+            f"FATAL: Temporal inversion or corrupted MT5 candle timestamp detected: {ts} "
+            f"(year < 2020). Causal execution halted."
+        )
+
     if ts.tzinfo is not None:
         return ts.tz_convert("UTC")
 
@@ -642,6 +653,18 @@ class ForwardSignalLogger:
         Seeds rolling candle buffer with historical closed bars without emitting signals
         or appending events. Used on startup/restart to pre-warm the 135-bar window.
         """
+        if isinstance(candles, np.ndarray):
+            # Proactively cast MT5 structured numpy ndarray to list of dicts
+            c_list = []
+            for row in candles:
+                c_dict = {}
+                for name in row.dtype.names:
+                    c_dict[name] = row[name]
+                if "tick_volume" in c_dict and "volume" not in c_dict:
+                    c_dict["volume"] = c_dict["tick_volume"]
+                c_list.append(c_dict)
+            candles = c_list
+
         if isinstance(candles, pd.DataFrame):
             times = candles.index
             opens = candles["open"].values

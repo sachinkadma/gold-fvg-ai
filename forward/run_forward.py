@@ -47,22 +47,30 @@ def init_mt5(terminal_path=None, login=None, password=None, server=None):
         return None
 
     path = terminal_path or os.environ.get("MT5_PATH", r"C:\Program Files\MetaTrader 5\terminal64.exe")
-    login = login or os.environ.get("MT5_LOGIN", 115395873)
-    password = password or os.environ.get("MT5_PASSWORD", "@iVu5gTh")
-    server = server or os.environ.get("MT5_SERVER", "MetaQuotes-Demo")
+    login = login or os.environ.get("MT5_LOGIN")
+    password = password or os.environ.get("MT5_PASSWORD")
+    server = server or os.environ.get("MT5_SERVER")
 
     init_kwargs = {
         "path": path,
-        "login": int(login),
-        "password": str(password),
-        "server": str(server),
         "timeout": 20000
     }
-    logger.info(f"Connecting to MT5: server={server}, login={login}...")
+    if login and password:
+        init_kwargs["login"] = int(login)
+        init_kwargs["password"] = str(password)
+        if server:
+            init_kwargs["server"] = str(server)
+        logger.info(f"Connecting to MT5: server={server or 'default'}, login={login}...")
+    else:
+        logger.info(f"Connecting to MT5 via active terminal session at {path}...")
+
     if not mt5.initialize(**init_kwargs):
-        err = mt5.last_error()
-        logger.error(f"MT5 initialization failed: {err}")
-        return None
+        if len(init_kwargs) > 2 and mt5.initialize(path=path, timeout=20000):
+            logger.info("Connected to active MT5 terminal session.")
+        else:
+            err = mt5.last_error()
+            logger.error(f"MT5 initialization failed: {err}")
+            return None
 
     term_info = mt5.terminal_info()
     acc_info = mt5.account_info()
